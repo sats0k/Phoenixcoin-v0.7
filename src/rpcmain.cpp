@@ -8,6 +8,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/asio/ip/v6_only.hpp>
+#include <boost/asio/connect.hpp>
 #if (BOOST_VERSION >= 107100)
 #include <boost/bind/bind.hpp>
 #else
@@ -561,16 +562,16 @@ void ErrorReply(std::ostream& stream, const Object& objError, const Value& id)
 bool ClientAllowed(const boost::asio::ip::address& address)
 {
     // Make sure that IPv4-compatible and IPv4-mapped IPv6 addresses are treated as IPv4 addresses
-    if (address.is_v6()
-     && (address.to_v6().is_v4_compatible()
-      || address.to_v6().is_v4_mapped()))
-        return ClientAllowed(address.to_v6().to_v4());
+//    if (address.is_v6()
+//     && (address.to_v6().is_v4_compatible()
+//      || address.to_v6().is_v4_mapped()))
+//        return ClientAllowed(address.to_v6().to_v4());
 
     if (address == asio::ip::address_v4::loopback()
      || address == asio::ip::address_v6::loopback()
      || (address.is_v4()
          // Check whether IPv4 addresses match 127.0.0.0/8 (loopback subnet)
-      && (address.to_v4().to_ulong() & 0xff000000) == 0x7f000000))
+      && (address.to_v4().to_uint() & 0xff000000) == 0x7f000000))
         return true;
 
     const string strAddress = address.to_string();
@@ -617,14 +618,13 @@ public:
 #else
         ip::tcp::resolver resolver(stream.get_io_service());
 #endif
-        ip::tcp::resolver::query query(server.c_str(), port.c_str());
-        ip::tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
-        ip::tcp::resolver::iterator end;
+        ip::tcp::resolver::results_type endpoints = resolver.resolve(server.c_str(), port.c_str());
+        ip::tcp::resolver::results_type end;
         boost::system::error_code error = asio::error::host_not_found;
-        while (error && endpoint_iterator != end)
+        while (error && endpoints != end)
         {
             stream.lowest_layer().close();
-            stream.lowest_layer().connect(*endpoint_iterator++, error);
+            boost::asio::connect(stream.lowest_layer(), endpoints, error);
         }
         if (error)
             return false;
@@ -652,10 +652,10 @@ class AcceptedConnectionImpl : public AcceptedConnection
 {
 public:
     AcceptedConnectionImpl(
-            asio::io_service& io_service,
+            asio::io_context& io_context,
             ssl::context &context,
             bool fUseSSL) :
-        sslStream(io_service, context),
+        sslStream(io_context, context),
         _d(sslStream, fUseSSL),
         _stream(_d)
     {
@@ -836,12 +836,12 @@ void ThreadRPCServer2(void* parg)
 
     const bool fUseSSL = GetBoolArg("-rpcssl");
 
-    asio::io_service io_service;
+    asio::io_context io_context;
 
 #if (BOOST_VERSION > 106501)
     ssl::context context(ssl::context::sslv23);
 #else
-    ssl::context context(io_service, ssl::context::sslv23);
+    ssl::context context(io_context, ssl::context::sslv23);
 #endif
     if (fUseSSL)
     {
@@ -879,7 +879,7 @@ void ThreadRPCServer2(void* parg)
     asio::ip::address bindAddress = loopback ? asio::ip::address_v6::loopback() : asio::ip::address_v6::any();
     ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcport", GetDefaultRPCPort()));
     boost::system::error_code v6_only_error;
-    boost::shared_ptr<ip::tcp::acceptor> acceptor(new ip::tcp::acceptor(io_service));
+    boost::shared_ptr<ip::tcp::acceptor> acceptor(new ip::tcp::acceptor(io_context));
 
     boost::signals2::signal<void ()> StopRequests;
 
@@ -894,7 +894,7 @@ void ThreadRPCServer2(void* parg)
         acceptor->set_option(boost::asio::ip::v6_only(loopback), v6_only_error);
 
         acceptor->bind(endpoint);
-        acceptor->listen(socket_base::max_connections);
+        acceptor->listen(socket_base::max_listen_connections);
 
         RPCListen(acceptor, context, fUseSSL);
         // Cancel outstanding listen-requests for this acceptor when shutting down
@@ -916,11 +916,11 @@ void ThreadRPCServer2(void* parg)
             bindAddress = loopback ? asio::ip::address_v4::loopback() : asio::ip::address_v4::any();
             endpoint.address(bindAddress);
 
-            acceptor.reset(new ip::tcp::acceptor(io_service));
+            acceptor.reset(new ip::tcp::acceptor(io_context));
             acceptor->open(endpoint.protocol());
             acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
             acceptor->bind(endpoint);
-            acceptor->listen(socket_base::max_connections);
+            acceptor->listen(socket_base::max_listen_connections);
 
             RPCListen(acceptor, context, fUseSSL);
             // Cancel outstanding listen-requests for this acceptor when shutting down
@@ -944,7 +944,7 @@ void ThreadRPCServer2(void* parg)
 
     vnThreadsRunning[THREAD_RPCLISTENER]--;
     while (!fShutdown)
-        io_service.run_one();
+        io_context.run_one();
     vnThreadsRunning[THREAD_RPCLISTENER]++;
     StopRequests();
 }
@@ -1163,7 +1163,7 @@ Object CallRPC(const string &strMethod, const Array &params) {
 
     // Connect to localhost
     bool fUseSSL = GetBoolArg("-rpcssl");
-    asio::io_service io_service;
+    asio::io_context io_context;
 
 #if (BOOST_VERSION > 106501)
     ssl::context context(ssl::context::sslv23);
@@ -1172,7 +1172,7 @@ Object CallRPC(const string &strMethod, const Array &params) {
 #endif
 
     context.set_options(ssl::context::no_sslv2);
-    asio::ssl::stream<asio::ip::tcp::socket> sslStream(io_service, context);
+    asio::ssl::stream<asio::ip::tcp::socket> sslStream(io_context, context);
     SSLIOStreamDevice<asio::ip::tcp> d(sslStream, fUseSSL);
     iostreams::stream< SSLIOStreamDevice<asio::ip::tcp> > stream(d);
     if (!d.connect(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcport", itostr(GetDefaultRPCPort()))))
