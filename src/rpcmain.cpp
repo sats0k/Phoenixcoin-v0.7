@@ -5,6 +5,8 @@
 
 #include <set>
 #include <list>
+#include <vector>
+#include <string>
 
 #include <boost/asio.hpp>
 #include <boost/asio/ip/v6_only.hpp>
@@ -561,24 +563,42 @@ void ErrorReply(std::ostream& stream, const Object& objError, const Value& id)
 
 bool ClientAllowed(const boost::asio::ip::address& address)
 {
-    // Make sure that IPv4-compatible and IPv4-mapped IPv6 addresses are treated as IPv4 addresses
-//    if (address.is_v6()
-//     && (address.to_v6().is_v4_compatible()
-//      || address.to_v6().is_v4_mapped()))
-//        return ClientAllowed(address.to_v6().to_v4());
+    using namespace boost::asio::ip;
 
-    if (address == asio::ip::address_v4::loopback()
-     || address == asio::ip::address_v6::loopback()
-     || (address.is_v4()
-         // Check whether IPv4 addresses match 127.0.0.0/8 (loopback subnet)
-      && (address.to_v4().to_uint() & 0xff000000) == 0x7f000000))
+    if (address.is_v6()) {
+        auto v6_addr = address.to_v6();
+
+        if (v6_addr.is_v4_mapped()) {
+            // Manually extract the last 4 bytes for IPv4
+            auto bytes = v6_addr.to_bytes();
+
+            // The IPv4 address is stored in the last four bytes
+            address_v4::bytes_type v4_bytes = {
+                bytes[12], bytes[13], bytes[14], bytes[15]
+            };
+            return ClientAllowed(address_v4(v4_bytes));
+        }
+    }
+
+    if (address == address_v4::loopback() || address == address_v6::loopback()) {
         return true;
+    }
 
-    const string strAddress = address.to_string();
-    const vector<string>& vAllow = mapMultiArgs["-rpcallowip"];
-    BOOST_FOREACH(string strAllow, vAllow)
+    if (address.is_v4()) {
+        // Check whether IPv4 address matches 127.0.0.0/8 (loopback subnet)
+        auto v4_addr = address.to_v4();
+        if ((v4_addr.to_uint() & 0xff000000) == 0x7f000000) {
+            return true;
+        }
+    }
+
+    const std::string strAddress = address.to_string();
+    const std::vector<std::string>& vAllow = mapMultiArgs["-rpcallowip"];
+    for (const auto& strAllow : vAllow) {
         if (WildcardMatch(strAddress, strAllow))
             return true;
+    }
+
     return false;
 }
 
