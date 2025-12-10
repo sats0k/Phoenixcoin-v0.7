@@ -143,12 +143,6 @@ extern json_spirit::Value getblock(const json_spirit::Array &params, bool fHelp)
 extern json_spirit::Value getcheckpoint(const json_spirit::Array &params, bool fHelp);
 extern json_spirit::Value sendcheckpoint(const json_spirit::Array &params, bool fHelp);
 
-/* in rpccrypto.cpp */
-extern json_spirit::Value encryptmessage(const json_spirit::Array &params, bool fHelp);
-extern json_spirit::Value decryptmessage(const json_spirit::Array &params, bool fHelp);
-extern json_spirit::Value encryptdata(const json_spirit::Array &params, bool fHelp);
-extern json_spirit::Value decryptdata(const json_spirit::Array &params, bool fHelp);
-
 /* in rpcdump.cpp */
 extern json_spirit::Value importprivkey(const json_spirit::Array &params, bool fHelp);
 extern json_spirit::Value importaddress(const json_spirit::Array &params, bool fHelp);
