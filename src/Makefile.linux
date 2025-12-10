@@ -11,14 +11,17 @@ CXX = g++
 LD := $(CXX)
 
 # Optimisation flags
-OPT = -pipe -O2 -fomit-frame-pointer -fno-stack-protector -pthread
+OPT = -pipe -O2 -fomit-frame-pointer -fno-stack-protector -pthread -I PQClean/common/
 
 # Warnings
 WARN = -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter \
 -Wno-ignored-qualifiers
 
+# Warnings C
+CWARN = -Wpedantic -Wmissing-prototypes
+
 # Additionals and overrides
-override CFLAGS := $(OPT) $(WARN) $(CFLAGS)
+override CFLAGS := $(OPT) $(WARN) $(CWARN) $(CFLAGS)
 override CXXFLAGS := $(OPT) $(WARN) $(CXXFLAGS)
 
 LDFLAGS = -Wl,-O2 -Wl,-s
@@ -154,7 +157,45 @@ obj/neoscrypt.o: neoscrypt.c
 obj/neoscrypt_asm.o: neoscrypt_asm.S
 	$(CC) -c -DNEOSCRYPT_SHA256 -DNEOSCRYPT_ASM -DNEOSCRYPT_OPT -o $@ $^
 
-phoenixcoind: $(OBJS:obj/%=obj/%)
+# Paths to PQClean Kyber implementation
+PQC_BASE_PATH = PQClean
+PQC_INCLUDE_PATH = $(PQC_BASE_PATH)/crypto_kem/kyber1024/clean
+PQC_LIB_PATH = $(PQC_BASE_PATH)/crypto_kem/kyber1024/clean
+KYBER_LIB = $(PQC_LIB_PATH)/libkyber.a
+
+# Add Kyber include path
+INCS += -I$(PQC_INCLUDE_PATH)
+
+# Build the Kyber library (add source files as needed)
+KYBER_SRCS = \
+    $(PQC_INCLUDE_PATH)/cbd.c \
+    $(PQC_INCLUDE_PATH)/indcpa.c \
+    $(PQC_INCLUDE_PATH)/kem.c \
+    $(PQC_INCLUDE_PATH)/ntt.c \
+    $(PQC_INCLUDE_PATH)/poly.c \
+    $(PQC_INCLUDE_PATH)/polyvec.c \
+    $(PQC_INCLUDE_PATH)/reduce.c \
+    $(PQC_INCLUDE_PATH)/symmetric-shake.c \
+    $(PQC_INCLUDE_PATH)/verify.c
+
+KYBER_OBJS = $(KYBER_SRCS:.c=.o)
+
+# Rule to build the static library
+$(KYBER_LIB): $(KYBER_OBJS)
+	@echo "Creating Kyber static library..."
+	ar rcs $@ $^
+
+# Compile the Kyber source files into object files
+$(KYBER_OBJS): $(PQC_INCLUDE_PATH)/%.o: $(PQC_INCLUDE_PATH)/%.c
+	$(CC) $(CFLAGS) -I$(PQC_INCLUDE_PATH) -c $< -o $@
+
+# Add the Kyber library to your link flags
+LIBS += -L$(PQC_LIB_PATH) -lkyber
+
+# Ensure the Kyber library is built before linking your main target
+$(OBJS:obj/%=obj/%): | $(KYBER_LIB)
+
+phoenixcoind: $(OBJS:obj/%=obj/%) $(KYBER_LIB)
 	$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 TESTOBJS := $(patsubst test/%.cpp,obj-test/%.o,$(wildcard test/*.cpp))
@@ -172,5 +213,6 @@ test_phoenixcoin: $(TESTOBJS) $(filter-out obj/init.o,$(OBJS:obj/%=obj/%))
 clean:
 	-rm -f obj/*.o obj/*.d obj/*.P obj/build.h
 	-rm -f phoenixcoind test_phoenixcoin
+	-rm -f $(KYBER_LIB) $(KYBER_OBJS)
 
 FORCE:
