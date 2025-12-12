@@ -10,10 +10,6 @@
 #include <string>
 #include <vector>
 
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-#include <openssl/ec.h> // for EC_KEY definition
-#endif
-
 #include "allocators.h"
 #include "serialize.h"
 #include "util.h"

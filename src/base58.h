@@ -56,11 +56,7 @@ inline std::string EncodeBase58(const unsigned char* pbegin, const unsigned char
     CBigNum dv;
     CBigNum rem;
     while(bn > bn0) {
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-        if(!BN_div(&dv, &rem, &bn, &bn58, pctx))
-#else
         if(!BN_div(dv.get(), rem.get(), bn.cget(), bn58.cget(), pctx))
-#endif
           throw(bignum_error("EncodeBase58 : BN_div() failed"));
         bn = dv;
         uint c = rem.getuint();
@@ -100,11 +96,7 @@ inline bool DecodeBase58(const char* psz, std::vector<unsigned char>& vchRet) {
             break;
         }
         bnChar.setuint(p1 - pszBase58);
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-        if(!BN_mul(&bn, &bn, &bn58, pctx))
-#else
         if(!BN_mul(bn.get(), bn.cget(), bn58.cget(), pctx))
-#endif
           throw(bignum_error("DecodeBase58 : BN_mul() failed"));
         bn += bnChar;
     }
