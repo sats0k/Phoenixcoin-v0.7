@@ -619,76 +619,12 @@ public:
     }
 };
 
-#if (BOOST_VERSION > 106501)
 bool NewThread(void(*pfn)(void*), void* parg);
-#endif
-
-
-
-
-
-
-// Note: It turns out we might have been able to use boost::thread
-// by using TerminateThread(boost::thread.native_handle(), 0);
-#ifdef WINDOWS
-
-#if (BOOST_VERSION <= 106501)
-inline HANDLE NewThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
-{
-    DWORD nUnused = 0;
-    HANDLE hthread =
-        NewThread(
-            NULL,                        // default security
-            0,                           // inherit stack size from parent
-            (LPTHREAD_START_ROUTINE)pfn, // function pointer
-            parg,                        // argument
-            0,                           // creation option, start immediately
-            &nUnused);                   // thread identifier
-    if (hthread == NULL)
-    {
-        printf("Error: CreateThread() returned %d\n", GetLastError());
-        return (HANDLE)0;
-    }
-    if (!fWantHandle)
-    {
-        CloseHandle(hthread);
-        return (HANDLE)-1;
-    }
-    return hthread;
-}
-#endif
-
-inline void SetThreadPriority(int nPriority)
-{
-    SetThreadPriority(GetCurrentThread(), nPriority);
-}
-#else
-#if (BOOST_VERSION <= 106501)
-inline pthread_t NewThread(void(*pfn)(void*), void* parg, bool fWantHandle=false)
-{
-    pthread_t hthread = 0;
-    int ret = pthread_create(&hthread, NULL, (void*(*)(void*))pfn, parg);
-    if (ret != 0)
-    {
-        printf("Error: pthread_create() returned %d\n", ret);
-        return (pthread_t)0;
-    }
-    if (!fWantHandle)
-    {
-        pthread_detach(hthread);
-        return (pthread_t)-1;
-    }
-    return hthread;
-}
-#endif
-
 #define THREAD_PRIORITY_LOWEST          PRIO_MAX
 #define THREAD_PRIORITY_BELOW_NORMAL    2
 #define THREAD_PRIORITY_NORMAL          0
 #define THREAD_PRIORITY_ABOVE_NORMAL    0
-
-inline void SetThreadPriority(int nPriority)
-{
+inline void SetThreadPriority(int nPriority){
     // It's unclear if it's even possible to change thread priorities on Linux,
     // but we really and truly need it for the generation threads.
 #ifdef PRIO_THREAD
@@ -698,16 +634,13 @@ inline void SetThreadPriority(int nPriority)
 #endif
 }
 
-inline void ExitThread(size_t nExitCode)
-{
+inline void ExitThread(size_t nExitCode){
     pthread_exit((void*)nExitCode);
 }
-#endif
 
 void RenameThread(const char* name);
 
-inline uint32_t ByteReverse(uint32_t value)
-{
+inline uint32_t ByteReverse(uint32_t value){
     value = ((value & 0xFF00FF00) >> 8) | ((value & 0x00FF00FF) << 8);
     return (value<<16) | (value>>16);
 }

@@ -597,15 +597,8 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 if(boost::filesystem::is_directory(pathDest)) pathDest /= wallet.strWalletFile;
 
                 try {
-#if (BOOST_VERSION >= 107400)
                     boost::filesystem::copy_file(pathSrc, pathDest,
-                      boost::filesystem::copy_options::overwrite_existing);
-#elif (BOOST_VERSION >= 104000)
-                    boost::filesystem::copy_file(pathSrc, pathDest,
-                      boost::filesystem::copy_option::overwrite_if_exists);
-#else
-                    boost::filesystem::copy_file(pathSrc, pathDest);
-#endif
+                     boost::filesystem::copy_options::overwrite_existing);
                     printf("copied wallet.dat to %s\n", pathDest.string().c_str());
                     return true;
                 } catch(const boost::filesystem::filesystem_error &e) {

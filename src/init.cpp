@@ -14,9 +14,6 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
-#if (BOOST_VERSION <= 108400)
-#include <boost/filesystem/convenience.hpp>
-#endif
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 
