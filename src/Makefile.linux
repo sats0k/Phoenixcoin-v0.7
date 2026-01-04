@@ -28,6 +28,9 @@ LDFLAGS = -Wl,-O2 -Wl,-s
 
 DEPSDIR = /usr/local
 
+SECP256k1_INCLUDE_PATH = -I secp256k1/include
+SECP256k1_LIB_PATH = -L secp256k1/.libs/
+
 BOOST_LIB_SUFFIX =
 BOOST_INCLUDE_PATH =
 BOOST_LIB_PATH =
@@ -98,7 +101,7 @@ ifeq (${STATIC}, all)
  LIBS += -Wl,-Bstatic
 endif
 
-LIBS += -lz -ldl -lpthread -lrt
+LIBS += -lz -ldl -lpthread -lrt -lsecp256k1
 
 OBJS = \
     obj/addrman.o \
