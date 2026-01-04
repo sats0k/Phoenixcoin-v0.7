@@ -12,10 +12,8 @@ static secp256k1_context* ctx = [] {
 }();
 
 /* ----------  Build EVP_PKEY from raw secret ---------- */
-static EVP_PKEY* MakePKeyFromSecret(const uchar* secret,
-                                    size_t secret_len,
-                                    const uchar* pubkey,
-                                    size_t pubkey_len) {
+static EVP_PKEY* MakePKeyFromSecret(const uchar* secret, size_t secret_len,
+                                    const uchar* pubkey, size_t pubkey_len) {
     if (!secret || secret_len != 32) return nullptr;
 
     if (pubkey_len != 65 || pubkey[0] != 0x04) return nullptr;
@@ -47,11 +45,11 @@ static EVP_PKEY* MakePKeyFromSecret(const uchar* secret,
     uchar bn_buf[32];
     BN_bn2binpad(bn, bn_buf, sizeof(bn_buf));
     OSSL_PARAM params[] = {
-        OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char*)"secp256k1", 0),
+        OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char*)"secp256k1",
+                               0),
         OSSL_PARAM_BN(OSSL_PKEY_PARAM_PRIV_KEY, bn_buf, sizeof(bn_buf)),
         OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, (void*)pubkey, 65),
-        OSSL_PARAM_END
-    };
+        OSSL_PARAM_END};
 
     if (EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEYPAIR, params) <= 0) {
         ERR_print_errors_fp(stderr);
@@ -66,8 +64,8 @@ static EVP_PKEY* MakePKeyFromSecret(const uchar* secret,
 }
 
 /* ----------  Recover pubkey from sig ---------- */
-CPubKey RecoverPubKey(const uint256& hash, const uchar sig64[64],
-                      int recid, bool compressed) {
+CPubKey RecoverPubKey(const uint256& hash, const uchar sig64[64], int recid,
+                      bool compressed) {
     secp256k1_ecdsa_recoverable_signature rsig;
     secp256k1_pubkey pub;
 
@@ -273,8 +271,7 @@ bool CKey::Sign(uint256 hash, std::vector<uchar>& sig) const {
     return true;
 }
 
-bool CKey::SignCompact(const uint256& hash,
-                       std::vector<uchar>& vchSig) const {
+bool CKey::SignCompact(const uint256& hash, std::vector<uchar>& vchSig) const {
     uchar privkey[32];
     std::memcpy(privkey, vchSecret.data(), 32);
     vchSig.clear();
