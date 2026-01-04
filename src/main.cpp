@@ -1,7 +1,7 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <string>
 #include <algorithm>
@@ -16,18 +16,18 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
-#include "util.h"
 #include "init.h"
 #include "alert.h"
-#include "db.h"
 #include "checkpoints.h"
-#include "ui_interface.h"
+#include "db.h"
+#include "wallet.h"
+#include "util.h"
 #include "main.h"
 
 using namespace std;
 using namespace boost;
 
-
+extern CWallet *pwalletMain;
 
 //
 // Global state
@@ -81,6 +81,7 @@ int64 nMinimumInputValue = TX_DUST;
  * 0xFE and ASCII 'P' 'X' 'C' mapped into extended characters */
 uchar pchMessageStart[4] = { 0xFE, 0xD0, 0xD8, 0xC3 };
 
+extern enum Checkpoints::CPMode CheckpointsMode;
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -200,20 +201,21 @@ bool AddOrphanTx(const CDataStream& vMsg)
     // have been mined or received.
     // 10,000 orphans, each of which is at most 5,000 bytes big is
     // at most 500 megabytes of orphans:
-    if (pvMsg->size() > 5000)
-    {
-        printf("ignoring large orphan tx (size: %" PRIszu", hash: %s)\n", pvMsg->size(), hash.ToString().substr(0,10).c_str());
-        delete pvMsg;
-        return false;
+    if(pvMsg->size() > 5000) {
+        printf("ignoring large orphan tx (size: %" PRIszu ", hash: %s)\n", pvMsg->size(),
+          hash.ToString().substr(0,10).c_str());
+        delete(pvMsg);
+        return(false);
     }
 
     mapOrphanTransactions[hash] = pvMsg;
     BOOST_FOREACH(const CTxIn& txin, tx.vin)
         mapOrphanTransactionsByPrev[txin.prevout.hash].insert(make_pair(hash, pvMsg));
 
-    printf("stored orphan tx %s (mapsz %" PRIszu")\n", hash.ToString().substr(0,10).c_str(),
-        mapOrphanTransactions.size());
-    return true;
+    printf("stored orphan tx %s (mapsz %" PRIszu ")\n", hash.ToString().substr(0,10).c_str(),
+      mapOrphanTransactions.size());
+
+    return(true);
 }
 
 static void EraseOrphanTx(uint256 hash)
@@ -620,9 +622,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
 
         // Don't accept it if it can't get into a block
         int64 txMinFee = tx.GetMinFee(nSize, true, GMF_RELAY);
-        if(nFees < txMinFee)
-          return(error("CTxMemPool::accept() : not enough fees for tx %s, %" PRI64d " < %" PRI64d,
-            hash.ToString().c_str(), nFees, txMinFee));
+        if(nFees < txMinFee) {
+            return(error("CTxMemPool::accept() : not enough fees for tx %s, " \
+              "%" PRI64d " < %" PRI64d "", hash.ToString().c_str(), nFees, txMinFee));
+        }
 
         // Continuously rate-limit free transactions
         // This mitigates 'penny-flooding' -- sending thousands of free transactions just to
@@ -673,10 +676,10 @@ bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
     if (ptxOld)
         EraseFromWallets(ptxOld->GetHash());
 
-    printf("CTxMemPool::accept() : accepted %s (poolsz %" PRIszu")\n",
-           hash.ToString().substr(0,10).c_str(),
-           mapTx.size());
-    return true;
+    printf("CTxMemPool::accept() : accepted %s (poolsz %" PRIszu ")\n",
+      hash.ToString().substr(0,10).c_str(), mapTx.size());
+
+    return(true);
 }
 
 bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs)
@@ -910,6 +913,15 @@ uint256 static GetOrphanRoot(const CBlock* pblock)
     while (mapOrphanBlocks.count(pblock->hashPrevBlock))
         pblock = mapOrphanBlocks[pblock->hashPrevBlock];
     return pblock->GetHash();
+}
+
+/* Find the parent block needed by a given orphan block */
+uint256 WantedByOrphan(const CBlock *pblockOrphan) {
+
+    while(mapOrphanBlocks.count(pblockOrphan->hashPrevBlock)) {
+        pblockOrphan = mapOrphanBlocks[pblockOrphan->hashPrevBlock];
+    }
+    return(pblockOrphan->hashPrevBlock);
 }
 
 int64 GetProofOfWorkReward(int nHeight, int64 nFees) {
@@ -1336,7 +1348,11 @@ bool CTransaction::FetchInputs(CTxDB& txdb, const map<uint256, CTxIndex>& mapTes
             // Revisit this if/when transaction replacement is implemented and allows
             // adding inputs:
             fInvalid = true;
-            return DoS(100, error("FetchInputs() : %s prevout.n out of range %d %" PRIszu" %" PRIszu" prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
+            return(DoS(100, error("FetchInputs() : %s prevout.n out of range %d " \
+              "%" PRIszu " %" PRIszu " prev tx %s\n%s",
+              GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(),
+              txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(),
+              txPrev.ToString().c_str())));
         }
     }
 
@@ -1404,8 +1420,14 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
             CTxIndex& txindex = inputs[prevout.hash].first;
             CTransaction& txPrev = inputs[prevout.hash].second;
 
-            if (prevout.n >= txPrev.vout.size() || prevout.n >= txindex.vSpent.size())
-                return DoS(100, error("ConnectInputs() : %s prevout.n out of range %d %" PRIszu" %" PRIszu" prev tx %s\n%s", GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(), txPrev.ToString().c_str()));
+            if((prevout.n >= txPrev.vout.size()) || (prevout.n >= txindex.vSpent.size())) {
+                return(DoS(100,
+                  error("ConnectInputs() : %s prevout.n out of range %d " \
+                  "%" PRIszu " %" PRIszu " prev tx %s\n%s",
+                  GetHash().ToString().substr(0,10).c_str(), prevout.n, txPrev.vout.size(),
+                  txindex.vSpent.size(), prevout.hash.ToString().substr(0,10).c_str(),
+                  txPrev.ToString().c_str())));
+            }
 
             // If prev is coinbase, check that it's matured
             if (txPrev.IsCoinBase())
@@ -1634,7 +1656,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
     }
 
     if(vtx[0].GetValueOut() > GetProofOfWorkReward(pindex->nHeight, nFees)) {
-        return(error("ConnectBlock() : coin base pays too much (actual=%" PRI64d" vs limit=%" PRI64d")",
+        return(error("ConnectBlock() : coin base pays too much (actual=%" PRI64d " vs limit=%" PRI64d ")",
           vtx[0].GetValueOut(), GetProofOfWorkReward(pindex->nHeight, nFees)));
     }
 
@@ -1694,8 +1716,12 @@ bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         vConnect.push_back(pindex);
     reverse(vConnect.begin(), vConnect.end());
 
-    printf("REORGANIZE: Disconnect %" PRIszu" blocks; %s..%s\n", vDisconnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexBest->GetBlockHash().ToString().substr(0,20).c_str());
-    printf("REORGANIZE: Connect %" PRIszu" blocks; %s..%s\n", vConnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(), pindexNew->GetBlockHash().ToString().substr(0,20).c_str());
+    printf("REORGANIZE: Disconnect %" PRIszu " blocks; %s..%s\n",
+      vDisconnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(),
+      pindexBest->GetBlockHash().ToString().substr(0,20).c_str());
+    printf("REORGANIZE: Connect %" PRIszu " blocks; %s..%s\n",
+      vConnect.size(), pfork->GetBlockHash().ToString().substr(0,20).c_str(),
+      pindexNew->GetBlockHash().ToString().substr(0,20).c_str());
 
     // Disconnect shorter branch
     vector<CTransaction> vResurrect;
@@ -1822,8 +1848,8 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             pindexIntermediate = pindexIntermediate->pprev;
         }
 
-        if (!vpindexSecondary.empty())
-            printf("Postponing %" PRIszu" reconnects\n", vpindexSecondary.size());
+        if(!vpindexSecondary.empty())
+          printf("Postponing %" PRIszu " reconnects\n", vpindexSecondary.size());
 
         // Switch to new best branch
         if (!Reorganize(txdb, pindexIntermediate))
@@ -2081,14 +2107,33 @@ bool CBlock::AcceptBlock()
 
     }
 
-    // Check that all transactions are finalized
-    BOOST_FOREACH(const CTransaction& tx, vtx)
-        if (!tx.IsFinal(nHeight, GetBlockTime()))
-            return DoS(10, error("AcceptBlock() : contains a non-final transaction"));
+    /* Check that all transactions are final */
+    BOOST_FOREACH(const CTransaction &tx, vtx) {
+        if(!tx.IsFinal(nHeight, GetBlockTime())) {
+            return(DoS(10, error("AcceptBlock() : contains a non-final transaction")));
+        }
+    }
 
-    // Check that the block chain matches the known block chain up to a checkpoint
-    if (!Checkpoints::CheckBlock(nHeight, hash))
-        return DoS(100, error("AcceptBlock() : rejected by checkpoint lock-in at %d", nHeight));
+    /* Check against hardcoded checkpoints */
+    if(!Checkpoints::CheckHardened(nHeight, hash)) {
+        return(DoS(100, error("AcceptBlock(): rejected by a hardened checkpoint at height %d", nHeight)));
+    }
+
+    /* Check against advanced (synchronised) checkpoints */
+    if(!IsInitialBlockDownload()) {
+        bool cpSatisfies = Checkpoints::CheckSync(hash, pindexPrev);
+
+        /* Failed blocks are rejected in strict mode */
+        if((CheckpointsMode == Checkpoints::STRICT) && !cpSatisfies) {
+            return(error("AcceptBlock(): block %s height %d rejected by advanced checkpointing",
+              hash.ToString().substr(0,20).c_str(), nHeight));
+        }
+
+        /* Failed blocks are accepted in advisory mode with a warning issued */
+        if((CheckpointsMode == Checkpoints::ADVISORY) && !cpSatisfies) {
+            strMiscWarning = _("WARNING: failed against advanced checkpointing!");
+        }
+    }
 
 #if (0)
     // Reject block.nVersion=1 blocks when 95% (75% on testnet) of the network has upgraded:
@@ -2124,17 +2169,23 @@ bool CBlock::AcceptBlock()
     if (!AddToBlockIndex(nFile, nBlockPos))
         return error("AcceptBlock() : AddToBlockIndex failed");
 
-    // Relay inventory, but don't relay old inventory during initial block download
+    /* Relay inventory, but don't relay old inventory during initial block download */
     int nBlockEstimate = Checkpoints::GetTotalBlocksEstimate();
-    if (hashBestChain == hash)
-    {
+    if(hashBestChain == hash) {
         LOCK(cs_vNodes);
-        BOOST_FOREACH(CNode* pnode, vNodes)
-            if (nBestHeight > (pnode->nStartingHeight != -1 ? pnode->nStartingHeight - 2000 : nBlockEstimate))
+        BOOST_FOREACH(CNode *pnode, vNodes) {
+            if(nBestHeight > (pnode->nStartingHeight !=
+              -1 ? pnode->nStartingHeight - 2000 : nBlockEstimate)) {
                 pnode->PushInventory(CInv(MSG_BLOCK, hash));
+            }
+        }
     }
 
-    return true;
+    /* Process a pending sync checkpoint;
+     * disabled during initial block download to accelerate processing speed */
+    if(!IsInitialBlockDownload()) Checkpoints::AcceptPendingSyncCheckpoint();
+
+    return(true);
 }
 
 bool CBlockIndex::IsSuperMajority(int minVersion, const CBlockIndex* pstart, unsigned int nRequired, unsigned int nToCheck)
@@ -2149,18 +2200,26 @@ bool CBlockIndex::IsSuperMajority(int minVersion, const CBlockIndex* pstart, uns
     return (nFound >= nRequired);
 }
 
-bool ProcessBlock(CNode* pfrom, CBlock* pblock)
-{
-    // Check for duplicate
+bool ProcessBlock(CNode *pfrom, CBlock *pblock) {
     uint256 hash = pblock->GetHash();
-    if (mapBlockIndex.count(hash))
-        return error("ProcessBlock() : already have block %d %s", mapBlockIndex[hash]->nHeight, hash.ToString().substr(0,20).c_str());
-    if (mapOrphanBlocks.count(hash))
-        return error("ProcessBlock() : already have block (orphan) %s", hash.ToString().substr(0,20).c_str());
 
-    // Preliminary checks
-    if (!pblock->CheckBlock())
-        return error("ProcessBlock() : CheckBlock FAILED");
+    /* Duplicate block check */
+    if(mapBlockIndex.count(hash)) {
+        return error("ProcessBlock() : block %s height %d have already",
+          hash.ToString().substr(0,20).c_str(), mapBlockIndex[hash]->nHeight);
+    }
+    if(mapOrphanBlocks.count(hash)) {
+        return error("ProcessBlock() : orphan block %s have already",
+          hash.ToString().substr(0,20).c_str());
+    }
+
+    /* Ask for a pending sync checkpoint, if any */
+    if(pfrom && !IsInitialBlockDownload())
+      Checkpoints::AskForPendingSyncCheckpoint(pfrom);
+
+    /* Basic block integrity checks including PoW target */
+    if(!pblock->CheckBlock())
+      return(error("ProcessBlock() : CheckBlock() FAILED"));
 
     CBlockIndex* pcheckpoint = Checkpoints::GetLastCheckpoint(mapBlockIndex);
     if (pcheckpoint && pblock->hashPrevBlock != hashBestChain)
@@ -2174,21 +2233,23 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 
     }
 
-    // If we don't already have its previous block, shunt it off to holding area until we get it
-    if (!mapBlockIndex.count(pblock->hashPrevBlock))
-    {
+    /* Accept an orphan block as long as there is a node to request preceding blocks from */
+    if(!mapBlockIndex.count(pblock->hashPrevBlock)) {
         printf("ProcessBlock: ORPHAN BLOCK, prev=%s\n", pblock->hashPrevBlock.ToString().substr(0,20).c_str());
 
-        // Accept orphans as long as there is a node to request its parents from
-        if (pfrom) {
-            CBlock* pblock2 = new CBlock(*pblock);
+        if(pfrom) {
+            CBlock *pblock2 = new CBlock(*pblock);
             mapOrphanBlocks.insert(make_pair(hash, pblock2));
             mapOrphanBlocksByPrev.insert(make_pair(pblock2->hashPrevBlock, pblock2));
 
-            // Ask this guy to fill in what we're missing
             pfrom->PushGetBlocks(pindexBest, GetOrphanRoot(pblock2));
+            /* Ask directly just in case */
+            if(!IsInitialBlockDownload())
+              pfrom->AskFor(CInv(MSG_BLOCK, WantedByOrphan(pblock2)));
+
         }
-        return true;
+
+        return(true);
     }
 
     // Store to disk
@@ -2215,7 +2276,13 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     }
 
     printf("ProcessBlock: ACCEPTED\n");
-    return true;
+
+    /* Checkpoint master sends a new sync checkpoint
+     * according to the depth specified by -checkpointdepth */
+    if(pfrom && !CSyncCheckpoint::strMasterPrivKey.empty())
+      Checkpoints::SendSyncCheckpoint(Checkpoints::AutoSelectSyncCheckpoint());
+
+    return(true);
 }
 
 
@@ -2225,8 +2292,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 
 
 
-bool CheckDiskSpace(uint64 nAdditionalBytes)
-{
+bool CheckDiskSpace(uint64 nAdditionalBytes) {
     uint64 nFreeBytesAvailable = boost::filesystem::space(GetDataDir()).available;
 
     // Check for nMinDiskSpace bytes (currently 50MB)
@@ -2244,8 +2310,7 @@ bool CheckDiskSpace(uint64 nAdditionalBytes)
     return true;
 }
 
-static boost::filesystem::path BlockFilePath(unsigned int nFile)
-{
+static boost::filesystem::path BlockFilePath(unsigned int nFile) {
     string strBlockFn = strprintf("blk%04u.dat", nFile);
     return GetDataDir() / strBlockFn;
 }
@@ -2413,11 +2478,46 @@ bool LoadBlockIndex(bool fAllowNew) {
         uint nFile;
         uint nBlockPos;
         if(!block.WriteToDisk(nFile, nBlockPos))
-          return(error("LoadBlockIndex() : failed to write the genesis block to disk"));
+          return(error("LoadBlockIndex(): failed to write the genesis block to disk"));
         if(!block.AddToBlockIndex(nFile, nBlockPos))
-          return(error("LoadBlockIndex() : failed to add the genesis block to the block index"));
+          return(error("LoadBlockIndex(): failed to add the genesis block to the block index"));
+
+        /* Initialise sync checkpointing */
+        if(!Checkpoints::WriteSyncCheckpoint(hashGenesisBlock))
+          return(error("LoadBlockIndex(): failed to initialise advanced checkpointing"));
 
     }
+
+    /* Verify the master public key and reset sync checkpointing if changed */
+    std::string strPubKey = "";
+    std::string strMasterPubKey = fTestNet ? CSyncCheckpoint::strTestPubKey : CSyncCheckpoint::strMainPubKey;
+
+#if 0
+    if(!pblocktree->ReadCheckpointPubKey(strPubKey) || (strPubKey != strMasterPubKey)) {
+
+        {
+            LOCK(Checkpoints::cs_hashSyncCheckpoint);
+            if(!pblocktree->WriteCheckpointPubKey(strMasterPubKey))
+              return(error("LoadBlockIndex(): failed to write the new checkpoint master key to the data base"));
+        }
+
+        if(!Checkpoints::ResetSyncCheckpoint())
+          return(error("LoadBlockIndex(): failed to reset advanced checkpointing"));
+    }
+#else
+    CTxDB txdbs;
+    if(!txdbs.ReadCheckpointPubKey(strPubKey) || (strPubKey != strMasterPubKey)) {
+        txdbs.TxnBegin();
+        if(!txdbs.WriteCheckpointPubKey(strMasterPubKey))
+          return(error("LoadBlockIndex(): failed to write the new checkpoint master key to the data base"));
+        if(!txdbs.TxnCommit())
+          return(error("LoadBlockIndex(): failed to commit the new checkpoint master key to the data base"));
+
+        if(!Checkpoints::ResetSyncCheckpoint())
+          return(error("LoadBlockIndex(): failed to reset advanced checkpointing"));
+    }
+    txdbs.Close();
+#endif
 
     return(true);
 }
@@ -2469,7 +2569,7 @@ void PrintBlockTree()
         // print item
         CBlock block;
         block.ReadFromDisk(pindex);
-        printf("%d (%u,%u) %s  %s  tx %" PRIszu"",
+        printf("%d (%u,%u) %s  %s  tx %" PRIszu "",
           pindex->nHeight, pindex->nFile, pindex->nBlockPos,
           block.GetHash().ToString().substr(0,20).c_str(),
           DateTimeStrFormat(block.GetBlockTime()).c_str(),
@@ -2550,8 +2650,10 @@ bool LoadExternalBlockFile(FILE* fileIn)
                    __PRETTY_FUNCTION__);
         }
     }
-    printf("Loaded %i blocks from external file in %" PRI64d"ms\n", nLoaded, GetTimeMillis() - nStart);
-    return nLoaded > 0;
+    printf("Loaded %i blocks from external file in %" PRI64d "ms\n",
+      nLoaded, GetTimeMillis() - nStart);
+
+    return(nLoaded > 0);
 }
 
 
@@ -2585,11 +2687,19 @@ string GetWarnings(string strFor)
         strStatusBar = strMiscWarning;
     }
 
-    // Longer invalid proof-of-work chain
-    if (pindexBest && bnBestInvalidWork > bnBestChainWork + pindexBest->GetBlockWork() * 6)
-    {
-        nPriority = 2000;
-        strStatusBar = strRPC = _("Warning: Displayed transactions may not be correct! You may need to upgrade, or other nodes may need to upgrade.");
+    /* Don't enter safe mode if the last received sync checkpoint is too old;
+     * display a warning in STRICT mode only */
+    if((CheckpointsMode == Checkpoints::STRICT) &&
+      Checkpoints::IsSyncCheckpointTooOld(60 * 60 * 24 * 10) &&
+      !fTestNet && !IsInitialBlockDownload()) {
+        nPriority = 100;
+        strStatusBar = _("WARNING: Advanced checkpoint is too old. Please notify the developers.");
+    }
+
+    /* Enter safe mode if an invalid sync checkpoint has been detected */
+    if(Checkpoints::hashInvalidCheckpoint != 0) {
+        nPriority = 3000;
+        strStatusBar = strRPC = _("WARNING: Inconsistent advanced checkpoint found! Please notify the developers.");
     }
 
     // Alerts
@@ -2658,8 +2768,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<CService, CPubKey> mapReuseKey;
     RandAddSeedPerfmon();
-    if (fDebug)
-        printf("received: %s (%" PRIszu" bytes)\n", strCommand.c_str(), vRecv.size());
+
+    if(fDebug)
+      printf("received: %s (%" PRIszu " bytes)\n", strCommand.c_str(), vRecv.size());
+
     if (mapArgs.count("-dropmessagestest") && GetRand(atoi(mapArgs["-dropmessagestest"])) == 0)
     {
         printf("dropmessagestest DROPPING RECV MESSAGE\n");
@@ -2712,6 +2824,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             return true;
         }
 
+        /* Record my external IP as reported */
+        if(addrFrom.IsRoutable() && addrMe.IsRoutable())
+          addrSeenByPeer = addrMe;
+
         // Be shy and don't send version until we hear
         if (pfrom->fInbound)
             pfrom->PushVersion();
@@ -2761,6 +2877,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 item.second.RelayTo(pfrom);
         }
 
+        /* Relay sync checkpoints */
+        {
+            LOCK(Checkpoints::cs_hashSyncCheckpoint);
+            if(!Checkpoints::checkpointMessage.IsNull())
+              Checkpoints::checkpointMessage.RelayTo(pfrom);
+        }
+
         pfrom->fSuccessfullyConnected = true;
 
         printf("received version message from %s, version %d, blocks=%d, us=%s, them=%s\n",
@@ -2768,8 +2891,10 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
           addrMe.ToString().c_str(), addrFrom.ToString().c_str());
 
         cPeerBlockCounts.input(pfrom->nStartingHeight);
-    }
 
+        /* Check for a pending sync checkpoint, if any */
+        if(!IsInitialBlockDownload()) Checkpoints::AskForPendingSyncCheckpoint(pfrom);
+    }
 
     else if (pfrom->nVersion == 0)
     {
@@ -2850,10 +2975,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     {
         vector<CInv> vInv;
         vRecv >> vInv;
-        if (vInv.size() > MAX_INV_SZ)
-        {
+        if(vInv.size() > MAX_INV_SZ) {
             pfrom->Misbehaving(20);
-            return error("message inv size() = %" PRIszu"", vInv.size());
+            return(error("message inv size() = %" PRIszu "", vInv.size()));
         }
 
         // find last block in inv vector
@@ -2900,14 +3024,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     {
         vector<CInv> vInv;
         vRecv >> vInv;
-        if (vInv.size() > MAX_INV_SZ)
-        {
+        if(vInv.size() > MAX_INV_SZ) {
             pfrom->Misbehaving(20);
-            return error("message getdata size() = %" PRIszu"", vInv.size());
+            return(error("message getdata size() = %" PRIszu "", vInv.size()));
         }
 
-        if (fDebugNet || (vInv.size() != 1))
-            printf("received getdata (%" PRIszu" invsz)\n", vInv.size());
+        if(fDebugNet || (vInv.size() != 1))
+          printf("received getdata (%" PRIszu " invsz)\n", vInv.size());
 
         BOOST_FOREACH(const CInv& inv, vInv)
         {
@@ -3246,6 +3369,27 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 // a different signature key, etc.
                 pfrom->Misbehaving(10);
             }
+        }
+    }
+
+
+    /* Sync checkpoint */
+    else if(strCommand == "checkpoint") {
+
+        if(pfrom->fDisconnect) {
+            printf("advanced checkpoint received from a disconnected peer %s of version %i; ignoring\n",
+              pfrom->addr.ToString().c_str(), pfrom->nVersion);
+            return(false);
+        }
+
+        CSyncCheckpoint checkpoint;
+        vRecv >> checkpoint;
+
+        if(checkpoint.ProcessSyncCheckpoint(pfrom)) {
+            /* Relay to connected nodes */
+            pfrom->hashCheckpointKnown = checkpoint.hashCheckpoint;
+            LOCK(cs_vNodes);
+            BOOST_FOREACH(CNode *pnode, vNodes) checkpoint.RelayTo(pnode);
         }
     }
 
@@ -3853,7 +3997,7 @@ CBlock *CreateNewBlock(CReserveKey &reservekey) {
 
         nLastBlockTx = nBlockTx;
         nLastBlockSize = nBlockSize;
-        printf("CreateNewBlock(): total size %" PRI64u"\n", nBlockSize);
+        printf("CreateNewBlock(): total size %" PRI64u "\n", nBlockSize);
 
     pblock->vtx[0].vout[0].nValue = GetProofOfWorkReward(pindexPrev->nHeight + 1, nFees);
 

@@ -1,21 +1,21 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <algorithm>
-
-#include "util.h"
-#include "sync.h"
-#include "compat.h"
-#include "netbase.h"
 
 #ifndef WINDOWS
 #include <sys/fcntl.h>
 #endif
 
-#include "strlcpy.h"
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
+
+#include "strlcpy.h"
+#include "compat.h"
+#include "sync.h"
+#include "netbase.h"
+#include "util.h"
 
 using namespace std;
 
@@ -126,7 +126,7 @@ bool LookupHost(const char *pszName, std::vector<CNetAddr>& vIP, unsigned int nM
         return false;
     char psz[256];
     char *pszHost = psz;
-    strlcpy(psz, pszName, sizeof(psz));
+    __strlcpy(psz, pszName, sizeof(psz));
     if (psz[0] == '[' && psz[strlen(psz)-1] == ']')
     {
         pszHost = psz+1;
@@ -898,7 +898,7 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
         nBits = 4;
     }
     // for he.net, use /36 groups
-    else if (GetByte(15) == 0x20 && GetByte(14) == 0x11 && GetByte(13) == 0x04 && GetByte(12) == 0x70)
+    else if (GetByte(15) == 0x20 && GetByte(14) == 0x01 && GetByte(13) == 0x04 && GetByte(12) == 0x70)
         nBits = 36;
     // for the rest of the IPv6 network, use /32 groups
     else
@@ -912,7 +912,11 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
         nBits -= 8;
     }
     if (nBits > 0)
-        vchRet.push_back(GetByte(15 - nStartByte) | ((1 << nBits) - 1));
+    {
+    uint8_t byte = GetByte(15 - nStartByte);
+    byte &= static_cast<uint8_t>(0xFF << (8 - nBits));
+    vchRet.push_back(byte);
+    }
 
     return vchRet;
 }

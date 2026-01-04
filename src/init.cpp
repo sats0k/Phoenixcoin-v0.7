@@ -1,42 +1,47 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <map>
 #include <vector>
 #include <set>
 
-#include "util.h"
-#include "init.h"
-#include "db.h"
-#include "walletdb.h"
-#include "net.h"
-#include "rpcmain.h"
-#include "ui_interface.h"
+#ifndef WINDOWS
+#include <signal.h>
+#endif
+
 
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
+#if (BOOST_VERSION <= 108400)
 #include <boost/filesystem/convenience.hpp>
+#endif
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+
 #include <openssl/crypto.h>
 
 #ifdef USE_UPNP
 #include <miniupnpc/miniupnpc.h>
 #endif
 
-#ifndef WINDOWS
-#include <signal.h>
-#endif
+#include "db.h"
+#include "checkpoints.h"
+#include "wallet.h"
+#include "util.h"
+#include "rpcmain.h"
+#include "init.h"
 
 using namespace std;
 using namespace boost;
 
-CWallet* pwalletMain;
+CWallet *pwalletMain;
 CClientUIInterface uiInterface;
 
 uint nMsgSleep;
+std::string strClientLaunchDateTime;
+enum Checkpoints::CPMode CheckpointsMode;
 
 /* Assembly level processor optimisation features */
 uint opt_flags = 0;
@@ -46,16 +51,14 @@ uint opt_flags = 0;
 // Shutdown
 //
 
-void ExitTimeout(void* parg)
-{
+void ExitTimeout(void *parg) {
 #ifdef WINDOWS
     Sleep(5000);
     ExitProcess(0);
 #endif
 }
 
-void StartShutdown()
-{
+void StartShutdown() {
 #ifdef QT_GUI
     /* Ensure we leave the Qt main loop for a clean GUI exit
      * (Shutdown() is called in phoenixcoin.cpp afterwards) */
@@ -66,8 +69,7 @@ void StartShutdown()
 #endif
 }
 
-void Shutdown(void* parg)
-{
+void Shutdown(void *parg) {
     static CCriticalSection cs_Shutdown;
     static bool fTaken;
 
@@ -113,13 +115,11 @@ void Shutdown(void* parg)
     }
 }
 
-void HandleSIGTERM(int)
-{
+void HandleSIGTERM(int) {
     fRequestShutdown = true;
 }
 
-void HandleSIGHUP(int)
-{
+void HandleSIGHUP(int) {
     fReopenDebugLog = true;
 }
 
@@ -377,6 +377,12 @@ bool AppInit2()
     fTestNet = GetBoolArg("-testnet");
     if(fTestNet) SoftSetBoolArg("-irc", true);
 
+    CheckpointsMode = Checkpoints::STRICT;
+    std::string strCpMode = GetArg("-cppolicy", "strict");
+    if(strCpMode == "strict") CheckpointsMode = Checkpoints::STRICT;
+    if(strCpMode == "advisory") CheckpointsMode = Checkpoints::ADVISORY;
+    if(strCpMode == "permissive") CheckpointsMode = Checkpoints::PERMISSIVE;
+
     if (mapArgs.count("-bind")) {
         // when specifying an explicit binding address, you want to listen on it
         // even when -connect or -proxy is specified
@@ -510,16 +516,18 @@ bool AppInit2()
     if (GetBoolArg("-shrinkdebugfile", !fDebug))
         ShrinkDebugFile();
 
-    printf("Phoenixcoin version %s (%s)\n", FormatFullVersion().c_str(), CLIENT_DATE.c_str());
+    strClientLaunchDateTime = DateTimeStrFormat(GetTime());
+
+    printf("Phoenixcoin %s (%s)\n", FormatFullVersion().c_str(), CLIENT_BUILD_DATE_TIME.c_str());
     printf("Using OpenSSL release: %s\n", SSLeay_version(SSLEAY_VERSION));
     printf("Using BerkeleyDB release: %s\n", DbEnv::version(0, 0, 0));
     printf("Using Boost v%d.%d.%d\n",
-      BOOST_VERSION / 100000, BOOST_VERSION / 100 % 1000, BOOST_VERSION % 100);
+      BOOST_VERSION / 100000, (BOOST_VERSION / 100) % 1000, BOOST_VERSION % 100);
 #ifdef USE_UPNP
     printf("Using miniUPnP Client v%s API v%d\n", MINIUPNPC_VERSION, MINIUPNPC_API_VERSION);
 #endif
     if(!fLogTimestamps)
-      printf("Launch time: %s\n", DateTimeStrFormat(GetTime()).c_str());
+      printf("Launch date: %s\n", strClientLaunchDateTime.c_str());
     printf("The default data directory is %s\n", GetDefaultDataDir().string().c_str());
     printf("Set up for a data directory of %s\n", strDataDir.c_str());
     std::ostringstream strErrors;
@@ -547,8 +555,7 @@ bool AppInit2()
             return false;
     }
 
-    if (boost::filesystem::exists(GetDataDir() / "wallet.dat"))
-    {
+    if(boost::filesystem::exists(GetDataDir() / "wallet.dat")) {
         CDBEnv::VerifyResult r = bitdb.Verify("wallet.dat", CWalletDB::Recover);
         if (r == CDBEnv::RECOVER_OK)
         {
@@ -666,6 +673,12 @@ bool AppInit2()
         }
     }
 
+    /* Setting up the private key for sync checkpoints on the master node */ 
+    if(mapArgs.count("-checkpointkey")) {
+        if(!Checkpoints::SetCheckpointPrivKey(GetArg("-checkpointkey", "")))
+          InitError(_("Unable to sign an advanced checkpoint, incorrect master key?\n"));
+    }
+
     BOOST_FOREACH(string strDest, mapMultiArgs["-seednode"])
         AddOneShot(strDest);
 
@@ -701,7 +714,7 @@ bool AppInit2()
         printf("Shutdown requested. Exiting.\n");
         return false;
     }
-    printf(" block index %15" PRI64d"ms\n", GetTimeMillis() - nStart);
+    printf(" block index %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
     if (GetBoolArg("-printblockindex") || GetBoolArg("-printblocktree"))
     {
@@ -793,7 +806,7 @@ bool AppInit2()
     }
 
     printf("%s", strErrors.str().c_str());
-    printf(" wallet      %15" PRI64d"ms\n", GetTimeMillis() - nStart);
+    printf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
     RegisterWallet(pwalletMain);
 
@@ -813,7 +826,7 @@ bool AppInit2()
         printf("Rescanning last %i blocks (from block %i)...\n", pindexBest->nHeight - pindexRescan->nHeight, pindexRescan->nHeight);
         nStart = GetTimeMillis();
         pwalletMain->ScanForWalletTransactions(pindexRescan, true);
-        printf(" rescan      %15" PRI64d"ms\n", GetTimeMillis() - nStart);
+        printf(" rescan      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
     }
 
     // ********************************************************* Step 9: import blocks
@@ -831,7 +844,7 @@ bool AppInit2()
     }
 
     boost::filesystem::path pathBootstrap = GetDataDir() / "bootstrap.dat";
-    if (boost::filesystem::exists(pathBootstrap)) {
+    if(boost::filesystem::exists(pathBootstrap)) {
         uiInterface.InitMessage(_("Importing bootstrap blockchain data file."));
 
         FILE *file = fopen(pathBootstrap.string().c_str(), "rb");
@@ -854,8 +867,8 @@ bool AppInit2()
             printf("Invalid or missing peers.dat; recreating\n");
     }
 
-    printf("Loaded %i addresses from peers.dat  %" PRI64d"ms\n",
-           addrman.size(), GetTimeMillis() - nStart);
+    printf("Loaded %i addresses from peers.dat  %" PRI64d "ms\n",
+      addrman.size(), GetTimeMillis() - nStart);
 
     // ********************************************************* Step 11: start node
 
@@ -865,11 +878,11 @@ bool AppInit2()
     RandAddSeedPerfmon();
 
     //// debug print
-    printf("mapBlockIndex.size() = %" PRIszu"\n",   mapBlockIndex.size());
-    printf("nBestHeight = %d\n",            nBestHeight);
-    printf("setKeyPool.size() = %" PRIszu"\n",      pwalletMain->setKeyPool.size());
-    printf("mapWallet.size() = %" PRIszu"\n",       pwalletMain->mapWallet.size());
-    printf("mapAddressBook.size() = %" PRIszu"\n",  pwalletMain->mapAddressBook.size());
+    printf("mapBlockIndex.size() = %" PRIszu "\n", mapBlockIndex.size());
+    printf("nBestHeight = %d\n", nBestHeight);
+    printf("setKeyPool.size() = %" PRIszu "\n", pwalletMain->setKeyPool.size());
+    printf("mapWallet.size() = %" PRIszu "\n", pwalletMain->mapWallet.size());
+    printf("mapAddressBook.size() = %" PRIszu "\n", pwalletMain->mapAddressBook.size());
 
     if (!NewThread(StartNode, NULL))
         InitError(_("Error: could not start node"));

@@ -1,7 +1,7 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file LICENCE or http://opensource.org/license/mit
 
 #ifndef ALERT_H
 #define ALERT_H
@@ -10,9 +10,10 @@
 #include <vector>
 #include <set>
 
-#include "uint256.h"
-#include "util.h"
+#include "datatypes.h"
+#include "serialize.h"
 
+class uint256;
 class CNode;
 
 /** Alerts are for notifying old versions if they become too obsolete and

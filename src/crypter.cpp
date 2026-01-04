@@ -1,17 +1,14 @@
 // Copyright (c) 2009-2012 The Bitcoin Developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
-#include <openssl/aes.h>
-#include <openssl/evp.h>
 #include <vector>
 #include <string>
 
-#ifdef WINDOWS
-#include <windows.h>
-#endif
-
 #include "crypter.h"
+
+#include <openssl/aes.h>
+#include <openssl/evp.h>
 
 bool CCrypter::SetKeyFromPassphrase(const SecureString& strKeyData, const std::vector<unsigned char>& chSalt, const unsigned int nRounds, const unsigned int nDerivationMethod) {
     if(nRounds < 1 || chSalt.size() != WALLET_CRYPTO_SALT_SIZE)

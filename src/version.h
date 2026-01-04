@@ -1,16 +1,13 @@
 // Copyright (c) 2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #ifndef VERSION_H
 #define VERSION_H
 
-#include "clientversion.h"
 #include <string>
 
-//
-// client versioning
-//
+#include "clientversion.h"
 
 static const int CLIENT_VERSION =
                            1000000 * CLIENT_VERSION_MAJOR
@@ -19,12 +16,8 @@ static const int CLIENT_VERSION =
                          +       1 * CLIENT_VERSION_BUILD;
 
 extern const std::string CLIENT_NAME;
-extern const std::string CLIENT_BUILD;
-extern const std::string CLIENT_DATE;
-
-//
-// network protocol versioning
-//
+extern const std::string CLIENT_BUILD_VERSION;
+extern const std::string CLIENT_BUILD_DATE_TIME;
 
 static const int PROTOCOL_VERSION = 70000;
 static const int MAX_PROTOCOL_VERSION = 79999;

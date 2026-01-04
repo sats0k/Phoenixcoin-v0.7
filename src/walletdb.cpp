@@ -1,25 +1,25 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
-#include <boost/version.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/variant/get.hpp>
-#include <boost/algorithm/string.hpp>
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <fstream>
 #include <algorithm>
 #include <map>
 
+#include <boost/algorithm/string.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/variant/get.hpp>
+#include <boost/version.hpp>
+
+#include "base58.h"
 #include "walletdb.h"
 #include "wallet.h"
 
 using namespace std;
 using namespace boost;
-
 
 static uint64 nAccountingEntryNumber = 0;
 
@@ -567,7 +567,8 @@ void ThreadFlushWalletDB(void* parg)
                         bitdb.CloseDb(strFile);
                         bitdb.CheckpointLSN(strFile);
 
-                        printf("Flushed wallet.dat %" PRI64d"ms\n", GetTimeMillis() - nStart);
+                        bitdb.mapFileUseCount.erase(mi++);
+                        printf("Flushed wallet.dat %" PRI64d "ms\n", GetTimeMillis() - nStart);
                     }
                 }
             }
@@ -595,12 +596,15 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 // Copy wallet.dat
                 boost::filesystem::path pathSrc = GetDataDir() / wallet.strWalletFile;
                 boost::filesystem::path pathDest(strDest);
-                if (boost::filesystem::is_directory(pathDest))
-                    pathDest /= wallet.strWalletFile;
+                if(boost::filesystem::is_directory(pathDest)) pathDest /= wallet.strWalletFile;
 
                 try {
-#if BOOST_VERSION >= 104000
-                    boost::filesystem::copy_file(pathSrc, pathDest, boost::filesystem::copy_option::overwrite_if_exists);
+#if (BOOST_VERSION >= 107400)
+                    boost::filesystem::copy_file(pathSrc, pathDest,
+                      boost::filesystem::copy_options::overwrite_existing);
+#elif (BOOST_VERSION >= 104000)
+                    boost::filesystem::copy_file(pathSrc, pathDest,
+                      boost::filesystem::copy_option::overwrite_if_exists);
 #else
                     boost::filesystem::copy_file(pathSrc, pathDest);
 #endif
@@ -630,7 +634,7 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys)
     // Set -rescan so any missing transactions will be
     // found.
     int64 now = GetTime();
-    std::string newFilename = strprintf("wallet.%" PRI64d".bak", now);
+    std::string newFilename = strprintf("wallet.%" PRI64d ".bak", now);
 
     int result = dbenv.dbenv.dbrename(NULL, filename.c_str(), NULL,
                                       newFilename.c_str(), DB_AUTO_COMMIT);
@@ -649,7 +653,7 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys)
         printf("Salvage(aggressive) found no records in %s.\n", newFilename.c_str());
         return false;
     }
-    printf("Salvage(aggressive) found %" PRIszu" records\n", salvagedData.size());
+    printf("Salvage(aggressive) found %" PRIszu " records\n", salvagedData.size());
 
     bool fSuccess = allOK;
     Db* pdbCopy = new Db(&dbenv.dbenv, 0);
@@ -802,7 +806,7 @@ bool ExportWallet(CWallet *pwallet, const string &strDst) {
 
     /* Produce output */
     file << strprintf("# Wallet export created by Phoenixcoin %s (%s)\n",
-      CLIENT_BUILD.c_str(), CLIENT_DATE.c_str());
+      CLIENT_BUILD_VERSION.c_str(), CLIENT_BUILD_DATE_TIME.c_str());
     file << strprintf("# * Created on %s\n", EncodeDumpTime(GetTime()).c_str());
     file << strprintf("# * The best block at the creation time was %i (%s),\n",
       nBestHeight, hashBestChain.ToString().c_str());

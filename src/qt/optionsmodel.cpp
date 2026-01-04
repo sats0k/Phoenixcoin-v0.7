@@ -1,11 +1,13 @@
-#include "optionsmodel.h"
-#include "coinunits.h"
-#include "guiutil.h"
+#include <QSettings>
 
 #include "init.h"
-#include "walletdb.h"
+#include "wallet.h"
 
-#include <QSettings>
+#include "guiutil.h"
+#include "coinunits.h"
+#include "optionsmodel.h"
+
+int nQtStyle;
 
 OptionsModel::OptionsModel(QObject *parent) :
     QAbstractListModel(parent)
@@ -41,7 +43,7 @@ void OptionsModel::Init()
 {
     QSettings settings;
 
-    // These are Qt-only settings:
+    /* These are Qt only settings */
     nDisplayUnit = settings.value("nDisplayUnit", CoinUnits::PXC).toInt();
     bDisplayAddresses = settings.value("bDisplayAddresses", false).toBool();
     fMinimizeToTray = settings.value("fMinimizeToTray", false).toBool();
@@ -50,8 +52,8 @@ void OptionsModel::Init()
     language = settings.value("language", "").toString();
     fCoinControlFeatures = settings.value("fCoinControlFeatures", false).toBool();
 
-    /* These are shared with the Phoenixcoin core; we want
-     * command-line options to override the GUI settings */
+    /* These are shared with the wallet core; we want
+     * command line options to override the GUI settings */
     if (settings.contains("fUseUPnP"))
         SoftSetBoolArg("-upnp", settings.value("fUseUPnP").toBool());
     if (settings.contains("addrProxy") && settings.value("fUseProxy").toBool())
@@ -62,6 +64,28 @@ void OptionsModel::Init()
         SoftSetBoolArg("-detachdb", settings.value("detachDB").toBool());
     if (!language.isEmpty())
         SoftSetArg("-lang", language.toStdString());
+
+    if(!nQtStyle) {
+        /* No style selector in command line or primary .conf, check Qt .conf */
+        if(settings.contains("nQtStyle")) {
+            /* Selected successfully */
+            nQtStyle = settings.value("nQtStyle").toInt();
+        } else {
+            /* Not there either, select by default */
+            nQtStyle = 3;
+            settings.setValue("nQtStyle", nQtStyle);
+        }
+    } else {
+        /* Selector in command line or primary .conf, override Qt .conf if any */
+        settings.setValue("nQtStyle", nQtStyle);
+    }
+
+    /* Selector range check */
+    if((nQtStyle < 1) || (nQtStyle > 3)) {
+        nQtStyle = 3;
+        settings.setValue("nQtStyle", nQtStyle);
+    }
+
 }
 
 bool OptionsModel::Upgrade()
@@ -174,6 +198,8 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             return settings.value("language", "");
         case(CoinControlFeatures):
             return(QVariant(fCoinControlFeatures));
+        case(QtStyle):
+            return(QVariant(nQtStyle));
         default:
             return QVariant();
         }
@@ -268,6 +294,10 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             settings.setValue("fCoinControlFeatures", fCoinControlFeatures);
             emit coinControlFeaturesChanged(fCoinControlFeatures);
             break;
+        case(QtStyle):
+            nQtStyle = value.toInt();
+            settings.setValue("nQtStyle", nQtStyle);
+            break;
         default:
             break;
         }
@@ -280,10 +310,6 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
 qint64 OptionsModel::getTransactionFee()
 {
     return nTransactionFee;
-}
-
-bool OptionsModel::getCoinControlFeatures() {
-    return(fCoinControlFeatures);
 }
 
 bool OptionsModel::getMinimizeToTray()
@@ -304,4 +330,8 @@ int OptionsModel::getDisplayUnit()
 bool OptionsModel::getDisplayAddresses()
 {
     return bDisplayAddresses;
+}
+
+bool OptionsModel::getCoinControlFeatures() {
+    return(fCoinControlFeatures);
 }

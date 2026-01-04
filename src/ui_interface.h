@@ -1,19 +1,21 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #ifndef UI_INTERFACE_H
 #define UI_INTERFACE_H
 
 #include <string>
-#include "util.h" // for int64
+
 #include <boost/signals2/signal.hpp>
 #include <boost/signals2/last_value.hpp>
 
+#include "datatypes.h"
+
+class uint256;
 class CBasicKeyStore;
 class CWallet;
-class uint256;
 
 /** General change type (added, updated, removed). */
 enum ChangeType

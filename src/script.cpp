@@ -1,29 +1,32 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
-#include <boost/foreach.hpp>
-#include <boost/tuple/tuple.hpp>
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <map>
 #include <utility>
 #include <set>
 
-using namespace std;
-using namespace boost;
+#include <boost/foreach.hpp>
+#include <boost/tuple/tuple.hpp>
 
-#include "script.h"
-#include "keystore.h"
+#include <openssl/evp.h>
+
+#include "sync.h"
 #include "bignum.h"
+#include "keystore.h"
 #include "key.h"
 #include "util.h"
 #include "main.h"
-#include "sync.h"
+#include "script.h"
 
-bool CheckSig(vector<unsigned char> vchSig, vector<unsigned char> vchPubKey, CScript scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType);
+using namespace std;
+using namespace boost;
 
-typedef vector<unsigned char> valtype;
+bool CheckSig(vector<uchar> vchSig, vector<uchar> vchPubKey, CScript scriptCode,
+  const CTransaction &txTo, uint nIn, int nHashType);
+
+typedef vector<uchar> valtype;
 static const valtype vchFalse(0);
 static const valtype vchZero(0);
 static const valtype vchTrue(1, 1);
@@ -820,8 +823,27 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                         return(false);
                     valtype& vch = stacktop(-1);
                     valtype vchHash((opcode == OP_RIPEMD160 || opcode == OP_SHA1 || opcode == OP_HASH160) ? 20 : 32);
-                    if(opcode == OP_RIPEMD160)
-                        RIPEMD160(&vch[0], vch.size(), &vchHash[0]);
+                    if(opcode == OP_RIPEMD160) {
+                        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+                        if(!ctx)
+                            return false;
+                        const EVP_MD* md = EVP_ripemd160();
+
+                        if(1 != EVP_DigestInit_ex(ctx, md, NULL)) {
+                            EVP_MD_CTX_free(ctx);
+                            return false;
+                        }
+                        if(1 != EVP_DigestUpdate(ctx, &vch[0], vch.size())) {
+                            EVP_MD_CTX_free(ctx);
+                            return false;
+                        }
+                        unsigned int hash_len = 0;
+                       if(1 != EVP_DigestFinal_ex(ctx, &vchHash[0], &hash_len)) {
+                           EVP_MD_CTX_free(ctx);
+                           return false;
+                       }
+                       EVP_MD_CTX_free(ctx);
+                    }
                     else if(opcode == OP_SHA1)
                         SHA1(&vch[0], vch.size(), &vchHash[0]);
                     else if(opcode == OP_SHA256)

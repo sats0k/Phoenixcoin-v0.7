@@ -1,20 +1,18 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #ifndef INIT_H
 #define INIT_H
 
 #include <string>
 
-#include "wallet.h"
-
-extern CWallet* pwalletMain;
-
 void StartShutdown();
-void Shutdown(void* parg);
+void Shutdown(void *parg);
 bool AppInit2();
 std::string HelpMessage();
+
+extern std::string strClientLaunchDateTime;
 
 #endif /* INIT_H */

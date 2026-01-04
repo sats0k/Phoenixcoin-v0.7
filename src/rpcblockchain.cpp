@@ -1,28 +1,29 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <string>
 #include <vector>
 
+#include "checkpoints.h"
 #include "main.h"
 #include "rpcmain.h"
 
 using namespace json_spirit;
 using namespace std;
 
-double GetDifficulty(const CBlockIndex* blockindex)
-{
-    // Floating point number that is a multiple of the minimum difficulty,
-    // minimum difficulty = 1.0.
-    if (blockindex == NULL)
-    {
-        if (pindexBest == NULL)
-            return 1.0;
-        else
-            blockindex = pindexBest;
-    }
+extern enum Checkpoints::CPMode CheckpointsMode;
+
+double GetDifficulty(const CBlockIndex *blockindex) {
+
+    /* The reference difficulty is 1.0 which is the lowest Bitcoin difficulty
+     * and may not match the minimal difficulty of a particular altcoin */
+
+    if(!blockindex && pindexBest)
+      blockindex = pindexBest;
+
+    if(!blockindex) return(1.0);
 
     int nShift = (blockindex->nBits >> 24) & 0xff;
 
@@ -78,7 +79,7 @@ Value getblockcount(const Array &params, bool fHelp) {
 
     if(fHelp || (params.size() != 0)) {
         string msg = "getblockcount\n"
-          "Returns the number of blocks in the longest block chain";
+          "Displays the number of blocks in the best block chain.";
         throw(runtime_error(msg));
     }
 
@@ -90,8 +91,8 @@ Value getdifficulty(const Array &params, bool fHelp) {
 
     if(fHelp || (params.size() != 0)) {
         string msg = "getdifficulty\n"
-          "Returns the current proof-of-work difficulty\n"
-          "as a multiple of the lowest possible difficulty";
+          "Displays the current proof-of-work difficulty\n"
+          "as a multiple of the lowest possible difficulty.";
         throw(runtime_error(msg));
     }
 
@@ -99,59 +100,27 @@ Value getdifficulty(const Array &params, bool fHelp) {
 }
 
 
-Value getnetworkhashps(const Array &params, bool fHelp) {
-
-    if(fHelp || (params.size() > 1)) {
-        string msg = "getnetworkhashps [blocks]\n"
-          "Calculates estimated network hashes per second based on the last 30 blocks.\n"
-          "Pass in [blocks] to override the default value;\n"
-          "zero specifies the number of blocks since the last retarget.";
-        throw(runtime_error(msg));
-    }
-
-    int lookup = params.size() > 0 ? params[0].get_int() : 30;
-
-    if(pindexBest == NULL) return 0;
-
-    // If look-up is zero or negative value, then use blocks since the last retarget
-    if(lookup <= 0) lookup = pindexBest->nHeight % 20 + 1;
-
-    // If look-up is larger than block chain, then set it to the maximum allowed
-    if(lookup > pindexBest->nHeight) lookup = pindexBest->nHeight;
-
-    CBlockIndex* pindexPrev = pindexBest;
-    for(int i = 0; i < lookup; i++) pindexPrev = pindexPrev->pprev;
-
-    double timeDiff = pindexBest->GetBlockTime() - pindexPrev->GetBlockTime();
-    double timePerBlock = timeDiff / lookup;
-
-    return (boost::int64_t)(((double)GetDifficulty() * pow(2.0, 32)) / timePerBlock);
-}
-
-
 Value settxfee(const Array &params, bool fHelp) {
 
-    if(fHelp || (params.size() < 1) || (params.size() > 1)) {
+    if(fHelp || (params.size() != 1) || (AmountFromValue(params[0]) < MIN_TX_FEE)) {
         string msg = "settxfee <amount>\n"
           "Sets the transaction fee per 1000 bytes of data.\n"
-          "<amount> is a real and is rounded to the nearest 0.00000001";
+          "<amount> is a floating point number rounded to the nearest 0.00000001";
         throw(runtime_error(msg));
     }
 
-    // Amount
-    int64 nAmount = 0;
-    if (params[0].get_real() != 0.0)
-        nAmount = AmountFromValue(params[0]);        // rejects 0.0 amounts
+    nTransactionFee = AmountFromValue(params[0]);
+    if(nTransactionFee < MIN_TX_FEE) nTransactionFee = MIN_TX_FEE;
 
-    nTransactionFee = nAmount;
-    return true;
+    return(true);
 }
+
 
 Value getrawmempool(const Array &params, bool fHelp) {
 
     if(fHelp || (params.size() != 0)) {
         string msg = "getrawmempool\n"
-          "Returns IDs of all transactions stored in the memory pool";
+          "Displays IDs of all transactions stored in the memory pool.";
         throw(runtime_error(msg));
     }
 
@@ -169,7 +138,7 @@ Value getblockhash(const Array &params, bool fHelp) {
 
     if(fHelp || (params.size() != 1)) {
         string msg = "getblockhash <height>\n"
-          "Returns hash of block in the best block chain at <height>";
+          "Displays hash of block in the best block chain at <height>.";
         throw(runtime_error(msg));
     }
 
@@ -181,23 +150,97 @@ Value getblockhash(const Array &params, bool fHelp) {
     return pblockindex->phashBlock->GetHex();
 }
 
+
 Value getblock(const Array &params, bool fHelp) {
 
     if(fHelp || (params.size() != 1)) {
         string msg = "getblock <hash>\n"
-          "Returns details of a block with a given block hash";
+          "Displays details of a block with a <hash> given.";
         throw(runtime_error(msg));
     }
 
     std::string strHash = params[0].get_str();
     uint256 hash(strHash);
 
-    if (mapBlockIndex.count(hash) == 0)
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
+    if(!mapBlockIndex.count(hash))
+      throw(JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found"));
 
     CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[hash];
+    CBlockIndex *pblockindex = mapBlockIndex[hash];
     block.ReadFromDisk(pblockindex, true);
 
-    return blockToJSON(block, pblockindex);
+    return(blockToJSON(block, pblockindex));
+}
+
+
+Value getcheckpoint(const Array &params, bool fHelp) {
+
+    if(fHelp || (params.size() != 0)) {
+        string msg = "getcheckpoint\n"
+          "Displays info on the last advanced checkpoint.";
+        throw(runtime_error(msg));
+    }
+
+    Object result;
+    CBlockIndex *pindexCheckpoint;
+
+    result.push_back(Pair("advcheckpoint", Checkpoints::hashSyncCheckpoint.ToString().c_str()));
+    pindexCheckpoint = mapBlockIndex[Checkpoints::hashSyncCheckpoint];
+    result.push_back(Pair("height", pindexCheckpoint->nHeight));
+    result.push_back(Pair("timestamp", DateTimeStrFormat(pindexCheckpoint->GetBlockTime()).c_str()));
+
+    if(CheckpointsMode == Checkpoints::STRICT)
+      result.push_back(Pair("policy", "strict"));
+
+    if(CheckpointsMode == Checkpoints::ADVISORY)
+      result.push_back(Pair("policy", "advisory"));
+
+    if(CheckpointsMode == Checkpoints::PERMISSIVE)
+      result.push_back(Pair("policy", "permissive"));
+
+    if(mapArgs.count("-checkpointkey"))
+      result.push_back(Pair("checkpointmaster", true));
+
+    return(result);
+}
+
+
+Value sendcheckpoint(const Array &params, bool fHelp) {
+
+    if(fHelp || (params.size() != 1)) {
+        string msg = "sendcheckpoint\n"
+          "Produces and sends an advanced checkpoint manually.";
+        throw(runtime_error(msg));
+    }
+
+    if(!mapArgs.count("-checkpointkey") || CSyncCheckpoint::strMasterPrivKey.empty())
+      throw(runtime_error("No master private key present, please set it up first."));
+
+    std::string strHash = params[0].get_str();
+    uint256 hash(strHash);
+
+    if(!Checkpoints::SendSyncCheckpoint(hash))
+      throw(runtime_error("Failed to send an advanced checkpoint."));
+
+    Object result;
+    CBlockIndex *pindexCheckpoint;
+
+    result.push_back(Pair("advcheckpoint", Checkpoints::hashSyncCheckpoint.ToString().c_str()));
+    pindexCheckpoint = mapBlockIndex[Checkpoints::hashSyncCheckpoint];
+    result.push_back(Pair("height", pindexCheckpoint->nHeight));
+    result.push_back(Pair("timestamp", DateTimeStrFormat(pindexCheckpoint->GetBlockTime()).c_str()));
+
+    if(CheckpointsMode == Checkpoints::STRICT)
+      result.push_back(Pair("policy", "strict"));
+
+    if(CheckpointsMode == Checkpoints::ADVISORY)
+      result.push_back(Pair("policy", "advisory"));
+
+    if(CheckpointsMode == Checkpoints::PERMISSIVE)
+      result.push_back(Pair("policy", "permissive"));
+
+    if(mapArgs.count("-checkpointkey"))
+      result.push_back(Pair("checkpointmaster", true));
+
+    return(result);
 }

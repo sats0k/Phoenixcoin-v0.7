@@ -1,20 +1,30 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <limits>
 #include <set>
 
-#include "util.h"
-#include "sync.h"
-#include "strlcpy.h"
-#include "version.h"
-#include "ui_interface.h"
-
-#include "netbase.h" /* for AddTimeData() */
+#include <stdarg.h>
 
 #include <boost/algorithm/string/join.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
+#include <boost/foreach.hpp>
+#include <boost/program_options/detail/config_file.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/thread.hpp>
+
+#include "strlcpy.h"
+#include "version.h"
+#include "sync.h"
+#include "netbase.h"
+#include "ui_interface.h"
+#include "util.h"
+
+#include <openssl/crypto.h>
+#include <openssl/rand.h>
 
 // Work around clang compilation problem in Boost 1.46:
 // /usr/include/boost/program_options/detail/config_file.hpp:163:17: error: call to function 'to_internal' that is neither visible in the template definition nor found by argument-dependent lookup
@@ -26,15 +36,6 @@ namespace boost {
     }
 }
 
-#include <boost/program_options/detail/config_file.hpp>
-#include <boost/program_options/parsers.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/fstream.hpp>
-#include <boost/foreach.hpp>
-#include <boost/thread.hpp>
-#include <openssl/crypto.h>
-#include <openssl/rand.h>
-#include <stdarg.h>
 
 #ifdef WINDOWS
 #ifndef NOMINMAX
@@ -117,7 +118,7 @@ instance_of_cinit;
 void RandAddSeed() {
     int64 nCounter = GetTimeMicros();
     RAND_add(&nCounter, sizeof(nCounter), 1.5);
-    memset(&nCounter, 0, sizeof(nCounter));
+    OPENSSL_cleanse(&nCounter, sizeof(nCounter));
 }
 
 void RandAddSeedPerfmon()
@@ -134,8 +135,8 @@ void RandAddSeedPerfmon()
     // Don't need this on Linux, OpenSSL automatically uses /dev/urandom
     // Seed with the entire set of perfmon data
     unsigned char pdata[250000];
-    memset(pdata, 0, sizeof(pdata));
     unsigned long nSize = sizeof(pdata);
+    OPENSSL_cleanse(pdata, nSize);
     long ret = RegQueryValueExA(HKEY_PERFORMANCE_DATA, "Global",
       NULL, NULL, pdata, &nSize);
     RegCloseKey(HKEY_PERFORMANCE_DATA);
@@ -175,61 +176,50 @@ uint256 GetRandHash()
 }
 
 
-
-
-
-
-
-
-inline int OutputDebugStringF(const char* pszFormat, ...)
-{
+/* Prints either to stdout, debug.log or debugger */
+inline int OutputDebugStringF(const char *pszFormat, ...) {
     int ret = 0;
-    if (fPrintToConsole)
-    {
-        // print to console
+
+    if(fPrintToConsole) {
         va_list arg_ptr;
         va_start(arg_ptr, pszFormat);
         ret = vprintf(pszFormat, arg_ptr);
         va_end(arg_ptr);
-    }
-    else if (!fPrintToDebugger)
-    {
-        // print to debug.log
-        static FILE* fileout = NULL;
+    } else if(!fPrintToDebugger) {
+        static FILE *fileout = NULL;
 
-        if (!fileout)
-        {
+        if(!fileout) {
             boost::filesystem::path pathDebug = GetDataDir() / "debug.log";
             fileout = fopen(pathDebug.string().c_str(), "a");
-            if (fileout) setbuf(fileout, NULL); // unbuffered
+            if(fileout) setbuf(fileout, NULL); // unbuffered
         }
-        if (fileout)
-        {
+
+        if(fileout) {
             static bool fStartedNewLine = true;
 
             // This routine may be called by global destructors during shutdown.
             // Since the order of destruction of static/global objects is undefined,
             // allocate mutexDebugLog on the heap the first time this routine
             // is called to avoid crashes during shutdown.
-            static boost::mutex* mutexDebugLog = NULL;
-            if (mutexDebugLog == NULL) mutexDebugLog = new boost::mutex();
+            static boost::mutex *mutexDebugLog = NULL;
+            if(!mutexDebugLog) mutexDebugLog = new boost::mutex();
             boost::mutex::scoped_lock scoped_lock(*mutexDebugLog);
 
-            // reopen the log file, if requested
-            if (fReopenDebugLog) {
+            /* Reopen the log file if requested */
+            if(fReopenDebugLog) {
                 fReopenDebugLog = false;
                 boost::filesystem::path pathDebug = GetDataDir() / "debug.log";
-                if (freopen(pathDebug.string().c_str(),"a",fileout) != NULL)
-                    setbuf(fileout, NULL); // unbuffered
+                if(freopen(pathDebug.string().c_str(),"a",fileout))
+                  setbuf(fileout, NULL); // unbuffered
             }
 
-            // Debug print useful for profiling
+            /* Debug print useful for profiling */
             if(fLogTimestamps && fStartedNewLine)
               fprintf(fileout, "%s ", DateTimeStrFormat(GetTime()).c_str());
-            if (pszFormat[strlen(pszFormat) - 1] == '\n')
-                fStartedNewLine = true;
+            if(pszFormat[strlen(pszFormat) - 1] == '\n')
+              fStartedNewLine = true;
             else
-                fStartedNewLine = false;
+              fStartedNewLine = false;
 
             va_list arg_ptr;
             va_start(arg_ptr, pszFormat);
@@ -239,11 +229,11 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
     }
 
 #ifdef WINDOWS
-    if (fPrintToDebugger)
-    {
+    if(fPrintToDebugger) {
         static CCriticalSection cs_OutputDebugStringF;
 
-        // accumulate and output a line at a time
+        /* Accumulate and output a line at a time */
+
         {
             LOCK(cs_OutputDebugStringF);
             static std::string buffer;
@@ -254,8 +244,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
             va_end(arg_ptr);
 
             int line_start = 0, line_end;
-            while((line_end = buffer.find('\n', line_start)) != -1)
-            {
+            while((line_end = buffer.find('\n', line_start)) != -1) {
                 OutputDebugStringA(buffer.substr(line_start, line_end - line_start).c_str());
                 line_start = line_end + 1;
             }
@@ -263,7 +252,8 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
         }
     }
 #endif
-    return ret;
+
+    return(ret);
 }
 
 string vstrprintf(const char *format, va_list ap)
@@ -349,9 +339,9 @@ string FormatMoney(int64 n, bool fPlus)
     // Note: not using straight sprintf here because we do NOT want
     // localized number formatting.
     int64 n_abs = (n > 0 ? n : -n);
-    int64 quotient = n_abs/COIN;
-    int64 remainder = n_abs%COIN;
-    string str = strprintf("%" PRI64d".%08" PRI64d, quotient, remainder);
+    int64 quotient = n_abs / COIN;
+    int64 remainder = n_abs % COIN;
+    string str = strprintf("%" PRI64d ".%08" PRI64d "", quotient, remainder);
 
     // Right-trim excess zeros before the decimal point:
     int nTrim = 0;
@@ -489,7 +479,7 @@ void ParseParameters(int argc, const char* const argv[])
     for (int i = 1; i < argc; i++)
     {
         char psz[10000];
-        strlcpy(psz, argv[i], sizeof(psz));
+        __strlcpy(psz, argv[i], sizeof(psz));
         char* pszValue = (char*)"";
         if (strchr(psz, '='))
         {
@@ -926,16 +916,10 @@ bool WildcardMatch(const string& str, const string& mask)
 }
 
 
-
-
-
-
-
-
-static std::string FormatException(std::exception* pex, const char* pszThread)
-{
+static std::string FormatException(std::exception *pex, const char *pszThread) {
 #ifdef WINDOWS
-    char pszModule[MAX_PATH].clear();
+    char pszModule[MAX_PATH];
+    memset(pszModule, 0x00, MAX_PATH);
     GetModuleFileNameA(NULL, pszModule, sizeof(pszModule));
 #else
     const char *pszModule = "phoenixcoin";
@@ -980,11 +964,17 @@ boost::filesystem::path GetDefaultDataDir() {
     path = boost::filesystem::current_path() / "data";
 #else
     /* Linux, Mac OS X, *BSD and so on: ~/.phoenixcoin */
-    char* pszHome = getenv("HOME");
-    if((pszHome == NULL) || (strlen(pszHome) == 0))
-      path = fs::path("/.phoenixcoin");
-    else
-      path = fs::path(pszHome) / ".phoenixcoin";
+    char *pszHome = getenv("HOME");
+    if(!pszHome || !strlen(pszHome)) {
+        /* Must be root if no $HOME set */
+#ifdef __APPLE__
+        path = fs::path("/private/var/root/.phoenixcoin");
+#else
+        path = fs::path("/root/.phoenixcoin");
+#endif
+    } else {
+        path = fs::path(pszHome) / ".phoenixcoin";
+    }
 #endif
 
     return(path);
@@ -1009,9 +999,9 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 
     if (mapArgs.count("-datadir")) {
         path = fs::system_complete(mapArgs["-datadir"]);
-        if (!fs::is_directory(path)) {
+        if(!fs::is_directory(path)) {
             path.clear();
-            return path;
+            return(path);
         }
     } else {
         path = GetDefaultDataDir();
@@ -1032,7 +1022,11 @@ boost::filesystem::path GetConfigFile() {
     fs::path pathConfigFile;
     if(mapArgs.count("-conf")) pathConfigFile = fs::path(mapArgs["-conf"]);
     else pathConfigFile = fs::path("phoenixcoin.conf");
+#if (BOOST_VERSION >= 105000)
     if(!pathConfigFile.is_absolute()) {
+#else
+    if(!pathConfigFile.is_complete()) {
+#endif
         if(!GetBoolArg("-testnet", false))
           pathConfigFile = GetDataDir(false) / pathConfigFile;
         else
@@ -1068,7 +1062,11 @@ void ReadConfigFile(map<string, string>& mapSettingsRet,
 
 boost::filesystem::path GetPidFile() {
     boost::filesystem::path pathPidFile(GetArg("-pid", "phoenixcoind.pid"));
+#if (BOOST_VERSION >= 105000)
+    if(!pathPidFile.is_absolute()) pathPidFile = GetDataDir() / pathPidFile;
+#else
     if(!pathPidFile.is_complete()) pathPidFile = GetDataDir() / pathPidFile;
+#endif
     return(pathPidFile);
 }
 
@@ -1095,13 +1093,14 @@ bool RenameOver(boost::filesystem::path src, boost::filesystem::path dest)
 #endif /* WINDOWS */
 }
 
-/* Returns zero on success and -1 on failure */
+/* Syncronises a file with a medium;
+ * returns zero on success or -1 on failure */
 int FileCommit(FILE *fileout) {
     int ret, fd;
 
-    /* fflush() is a caller's responsibility */
+    /* fflush() is a caller's responsibility;
+     * get a file descriptor first and perform the synchronisation next */
 
-    /* Get a file descriptor and perform the synchronisation */
 #if (WINDOWS)
     fd = _fileno(fileout);
     ret = _commit(fd);
@@ -1110,10 +1109,10 @@ int FileCommit(FILE *fileout) {
 #if (__linux__)
     ret = fdatasync(fd);
 #elif (__APPLE__) && (F_FULLFSYNC)
-    /* F_FULLFSYNC means fsync with device flush to medium;
-     * works with HFS only as of 10.4, so fail over to fsync */
+    /* fcntl() with F_FULLFSYNC means fsync() with device flush to medium;
+     * works with HFS only as of 10.4, so fail over to fsync() */
     ret = fcntl(fd, F_FULLFSYNC, 0);
-    if(!ret) ret = fsync(fd);
+    if(ret) ret = fsync(fd);
 #else
     ret = fsync(fd);
 #endif
@@ -1133,28 +1132,21 @@ int GetFilesize(FILE* file)
 
 void ShrinkDebugFile() {
     boost::filesystem::path pathLog = GetDataDir() / "debug.log";
-    FILE* file = fopen(pathLog.string().c_str(), "r");
-    /* If the file size exceeds 10Mb, crop it to the last 200Kb */
+    FILE *file = fopen(pathLog.string().c_str(), "r");
+    /* If the file size exceeds 10Mb, crop it to the last 100Kb */
     if(file && (GetFilesize(file) > 10 * 1024 * 1024)) {
-        char pch[200 * 1024];
+        char pch[100 * 1024];
         fseek(file, -((long)sizeof(pch)), SEEK_END);
         int nBytes = fread(pch, 1, sizeof(pch), file);
         fclose(file);
 
         file = fopen(pathLog.string().c_str(), "w");
-        if (file)
-        {
+        if(file) {
             fwrite(pch, 1, nBytes, file);
             fclose(file);
         }
-    } else if(file != NULL) fclose(file);
+    } else if(file) fclose(file);
 }
-
-
-
-
-
-
 
 
 //
@@ -1213,7 +1205,8 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
 
     // Add data
     vTimeOffsets.input(nOffsetSample);
-    printf("Added time data, samples %d, offset %+" PRI64d" (%+" PRI64d" minutes)\n", vTimeOffsets.size(), nOffsetSample, nOffsetSample/60);
+    printf("Added time data, samples %d, offset %+" PRI64d " (%+" PRI64d " minutes)\n",
+      vTimeOffsets.size(), nOffsetSample, nOffsetSample / 60);
     if (vTimeOffsets.size() >= 5 && vTimeOffsets.size() % 2 == 1)
     {
         int64 nMedian = vTimeOffsets.median();
@@ -1250,12 +1243,12 @@ void AddTimeData(const CNetAddr& ip, int64 nTime)
 
         if (fDebug) {
             BOOST_FOREACH(int64 n, vSorted)
-                printf("%+" PRI64d"  ", n);
+                printf("%+" PRI64d "  ", n);
             printf("|  ");
         }
 
         if(nPeersOffset != INT64_MAX)
-          printf("nPeersOffset = %+" PRI64d" seconds\n", nPeersOffset);
+          printf("nPeersOffset = %+" PRI64d " seconds\n", nPeersOffset);
     }
 }
 
@@ -1271,9 +1264,8 @@ string FormatVersion(int nVersion) {
       (nVersion / 10000) % 100, (nVersion / 100) % 100, nVersion % 100));
 }
 
-string FormatFullVersion()
-{
-    return CLIENT_BUILD;
+string FormatFullVersion() {
+    return(CLIENT_BUILD_VERSION);
 }
 
 // Format the subversion field according to BIP 14 spec (https://en.bitcoin.it/wiki/BIP_0014)

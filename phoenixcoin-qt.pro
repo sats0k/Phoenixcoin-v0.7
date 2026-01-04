@@ -19,15 +19,16 @@ greaterThan(QT_MAJOR_VERSION, 4): {
 # Dependency library locations can be customized with:
 #    BOOST_INCLUDE_PATH, BOOST_LIB_PATH, BDB_INCLUDE_PATH,
 #    BDB_LIB_PATH, OPENSSL_INCLUDE_PATH and OPENSSL_LIB_PATH respectively
-win32:BOOST_LIB_SUFFIX=-mgw49-mt-x64-1_70
-win32:BOOST_INCLUDE_PATH="/home/Administrator/boost-1.70"
-win32:BOOST_LIB_PATH="/home/Administrator/boost-1.70/stage/lib"
+win32:BOOST_LIB_SUFFIX=-mgw49-mt-x64-1_81
+win32:BOOST_INCLUDE_PATH="/home/Administrator/boost-1.81"
+win32:BOOST_LIB_PATH="/home/Administrator/boost-1.81/stage/lib"
 win32:BDB_INCLUDE_PATH="/home/Administrator/db-5.3.28/build_unix"
 win32:BDB_LIB_PATH="/home/Administrator/db-5.3.28/build_unix"
 win32:OPENSSL_INCLUDE_PATH="/home/Administrator/openssl-1.0.2u/include"
 win32:OPENSSL_LIB_PATH="/home/Administrator/openssl-1.0.2u"
-win32:MINIUPNPC_INCLUDE_PATH="/home/Administrator"
-win32:MINIUPNPC_LIB_PATH="/home/Administrator/miniupnpc"
+# Directory with the headers "include" should be renamed or copied to "miniupnpc"
+win32:MINIUPNPC_INCLUDE_PATH="/home/Administrator/miniupnpc-2.3.0"
+win32:MINIUPNPC_LIB_PATH="/home/Administrator/miniupnpc-2.3.0"
 
 macx:BOOST_LIB_SUFFIX=-mt-x64
 
@@ -103,9 +104,11 @@ contains(USE_UPNP, -) {
     count(USE_UPNP, 0) {
         USE_UPNP=1
     }
-    DEFINES += USE_UPNP=$$USE_UPNP STATICLIB
+    DEFINES += USE_UPNP=$$USE_UPNP
     INCLUDEPATH += $$MINIUPNPC_INCLUDE_PATH
     LIBS += $$join(MINIUPNPC_LIB_PATH,,-L,) -lminiupnpc
+# Remove MINIUPNP_STATICLIB if linking against a shared library
+    win32:DEFINES += MINIUPNP_STATICLIB
     win32:LIBS += -liphlpapi
 }
 
@@ -120,7 +123,6 @@ contains(USE_DBUS, 1) {
 #  or: qmake "USE_IPV6=0" (compiled and disabled by default)
 #  or: qmake "USE_IPV6=-" (not compiled)
 contains(USE_IPV6, -) {
-    message(Building without IPv6 support)
     message("Building without IPv6 support$$escape_expand(\\n)")
 } else {
     message("Building with the IPv6 support$$escape_expand(\\n)")
@@ -130,14 +132,14 @@ contains(USE_IPV6, -) {
     DEFINES += USE_IPV6=$$USE_IPV6
 }
 
-contains(PHOENIXCOIN_NEED_QT_PLUGINS, 1) {
-    DEFINES += PHOENIXCOIN_NEED_QT_PLUGINS
+contains(NEED_QT_PLUGINS, 1) {
+    DEFINES += NEED_QT_PLUGINS
     QTPLUGIN += qcncodecs qjpcodecs qtwcodecs qkrcodecs qtaccessiblewidgets
 }
 
 
 # regenerate src/build.h
-!windows|contains(USE_BUILD_INFO, 1) {
+!win32|contains(USE_BUILD_INFO, 1) {
     genbuild.depends = FORCE
     genbuild.commands = cd $$PWD; /bin/sh share/genbuild.sh $$OUT_PWD/build/build.h
     genbuild.target = $$OUT_PWD/build/build.h
@@ -212,6 +214,7 @@ HEADERS += src/qt/gui.h \
     src/qt/sendcoinsentry.h \
     src/qt/qvalidatedlineedit.h \
     src/qt/coinunits.h \
+    src/qt/walletstyles.h \
     src/qt/qvaluecombobox.h \
     src/qt/askpassphrasedialog.h \
     src/protocol.h \
@@ -225,6 +228,7 @@ HEADERS += src/qt/gui.h \
     src/netbase.h \
     src/clientversion.h \
     src/neoscrypt.h \
+    src/ecies/ecies.h \
     src/ntp.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
@@ -271,6 +275,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/qt/transactionview.cpp \
     src/qt/walletmodel.cpp \
     src/rpcmain.cpp \
+    src/rpccrypto.cpp \
     src/rpcdump.cpp \
     src/rpcnet.cpp \
     src/rpcmining.cpp \
@@ -283,6 +288,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/qt/sendcoinsentry.cpp \
     src/qt/qvalidatedlineedit.cpp \
     src/qt/coinunits.cpp \
+    src/qt/walletstyles.cpp \
     src/qt/qvaluecombobox.cpp \
     src/qt/askpassphrasedialog.cpp \
     src/protocol.cpp \
@@ -293,6 +299,9 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/noui.cpp \
     src/neoscrypt.c \
     src/neoscrypt_asm.S \
+    src/ecies/secure.c \
+    src/ecies/ecies.c \
+    src/ecies/kdf.c \
     src/ntp.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
@@ -321,16 +330,6 @@ SOURCES += src/qt/qrcodedialog.cpp
 FORMS += src/qt/forms/qrcodedialog.ui
 }
 
-contains(PHOENIXCOIN_QT_TEST, 1) {
-SOURCES += src/qt/test/test_main.cpp \
-    src/qt/test/uritests.cpp
-HEADERS += src/qt/test/uritests.h
-DEPENDPATH += src/qt/test
-QT += testlib
-TARGET = phoenixcoin-qt_test
-DEFINES += PHOENIXCOIN_QT_TEST
-}
-
 CODECFORTR = UTF-8
 
 # for lrelease/lupdate
@@ -352,11 +351,11 @@ QMAKE_EXTRA_COMPILERS += TSQM
 
 # "Other files" to show in Qt Creator
 OTHER_FILES += \
-    doc/*.rst doc/*.txt doc/README README.md res/phoenixcoin-qt.rc src/test/*.cpp src/test/*.h src/qt/test/*.cpp src/qt/test/*.h
+    doc/*.rst doc/*.txt doc/README README.md res/phoenixcoin-qt.rc
 
-windows:RC_FILE = src/qt/res/phoenixcoin-qt.rc
+win32:RC_FILE = src/qt/res/phoenixcoin-qt.rc
 
-windows:!contains(MINGW_THREAD_BUGFIX, 0) {
+win32:!contains(MINGW_THREAD_BUGFIX, 0) {
     # At least qmake's win32-g++-cross profile is missing the -lmingwthrd
     # thread-safety flag. GCC has -mthreads to enable this, but it doesn't
     # work with static linking. -lmingwthrd must come BEFORE -lmingw, so
@@ -367,7 +366,7 @@ windows:!contains(MINGW_THREAD_BUGFIX, 0) {
     QMAKE_LIBS_QT_ENTRY = -lmingwthrd $$QMAKE_LIBS_QT_ENTRY
 }
 
-!windows:!macx {
+!win32:!macx {
     DEFINES += LINUX
     LIBS += -lrt
 }
@@ -388,6 +387,11 @@ LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB
 LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX
 # -lgdi32 has to happen after -lcrypto (see  #681)
 win32:LIBS += -lws2_32 -lmswsock -lshlwapi -lole32 -loleaut32 -luuid -lgdi32
+
+if (BOOST_VERSION < 108900) {
 LIBS += -lboost_system$$BOOST_LIB_SUFFIX -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_LIB_SUFFIX
+} else {
+LIBS += -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_LIB_SUFFIX
+}
 
 system($$QMAKE_LRELEASE -silent $$_PRO_FILE_)

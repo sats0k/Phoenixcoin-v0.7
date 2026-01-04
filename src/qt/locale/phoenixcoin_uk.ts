@@ -18,13 +18,13 @@
         <source>
 This is experimental software.
 
-Distributed under the MIT/X11 software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php.
+Distributed under the MIT/X11 software licence, see the accompanying file LICENCE or http://opensource.org/license/mit
 
 This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/) and cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP software written by Thomas Bernard.</source>
         <translation>
 Це програмне забезпечення є експериментальним.
 
-Поширюється за ліцензією MIT/X11, додаткова інформація міститься у файлі COPYING, а також за адресою http://www.opensource.org/licenses/mit-license.php.
+Поширюється за ліцензією MIT/X11, додаткова інформація міститься у файлі LICENCE, а також за адресою http://opensource.org/license/mit
 
 Цей продукт включає в себе програмне забезпечення, розроблене в рамках проекту OpenSSL (http://www.openssl.org/), криптографічне програмне забезпечення, написане Еріком Янгом (eay@cryptsoft.com), та функції для роботи з UPnP, написані Томасом Бернардом.</translation>
     </message>
@@ -756,7 +756,7 @@ Address: %4
     </message>
     <message>
         <location line="+1"/>
-        <source>command-line options</source>
+        <source>command line options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1107,11 +1107,6 @@ Address: %4
 <context>
     <name>RPCConsole</name>
     <message>
-        <location filename="../forms/rpcconsole.ui" line="+46"/>
-        <source>Client name</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location line="+10"/>
         <location line="+23"/>
         <location line="+26"/>
@@ -1137,13 +1132,13 @@ Address: %4
     </message>
     <message>
         <location line="+68"/>
-        <source>Using OpenSSL version</source>
-        <translation type="unfinished"></translation>
+        <source>using</source>
+        <translation>з використанням</translation>
     </message>
     <message>
         <location line="+49"/>
-        <source>Startup time</source>
-        <translation type="unfinished"></translation>
+        <source>Launch date</source>
+        <translation>Дата запуску</translation>
     </message>
     <message>
         <location line="+29"/>
@@ -1187,12 +1182,12 @@ Address: %4
     </message>
     <message>
         <location line="+16"/>
-        <source>Command-line options</source>
+        <source>Command line options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+7"/>
-        <source>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command-line options.</source>
+        <source>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command line options.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

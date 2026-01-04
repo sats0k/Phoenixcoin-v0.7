@@ -1,7 +1,7 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin Developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 //
 // Why base-58 instead of standard base-64 encoding?
@@ -178,6 +178,11 @@ protected:
         vchData.clear();
     }
 
+    ~CBase58Data() {
+        /* Zero the memory, as it may contain sensitive data */
+        if(!vchData.empty()) OPENSSL_cleanse((void *) &vchData[0], vchData.size());
+    }
+
     void SetData(int nVersionIn, const void* pdata, size_t nSize) {
         nVersion = nVersionIn;
         vchData.resize(nSize);
@@ -201,7 +206,7 @@ public:
         nVersion = vchTemp[0];
         vchData.resize(vchTemp.size() - 1);
         if(!vchData.empty())
-            memcpy(&vchData[0], &vchTemp[1], vchData.size());
+          memcpy(&vchData[0], &vchTemp[1], vchData.size());
         OPENSSL_cleanse(&vchTemp[0], vchData.size());
         return(true);
     }
@@ -211,7 +216,9 @@ public:
     }
 
     std::string ToString() const {
-        std::vector<unsigned char> vch(1, nVersion);
+        std::vector<uchar> vch;
+        vch.resize(1, nVersion);
+        vch.swap(vch);
         vch.insert(vch.end(), vchData.begin(), vchData.end());
         return EncodeBase58Check(vch);
     }

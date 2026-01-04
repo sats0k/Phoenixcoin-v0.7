@@ -18,14 +18,14 @@
         <source>
 This is experimental software.
 
-Distributed under the MIT/X11 software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php.
+Distributed under the MIT/X11 software licence, see the accompanying file LICENCE or http://opensource.org/license/mit
 
 This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/) and cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP software written by Thomas Bernard.</source>
         <translation>
 Este es un software experimental.
 
 Distribuido bajo la licencia MIT/X11, vea el archivo adjunto
-COPYING o http://www.opensource.org/licenses/mit-license.php.
+LICENCE o http://opensource.org/license/mit
 
 Este producto incluye software desarrollado por OpenSSL Project para su uso en
 el OpenSSL Toolkit (http://www.openssl.org/) y software criptográfico escrito por
@@ -753,7 +753,7 @@ Dirección: %4
     </message>
     <message>
         <location line="+1"/>
-        <source>command-line options</source>
+        <source>command line options</source>
         <translation>opciones de la línea de órdenes</translation>
     </message>
     <message>
@@ -1103,11 +1103,6 @@ Dirección: %4
 <context>
     <name>RPCConsole</name>
     <message>
-        <location filename="../forms/rpcconsole.ui" line="+46"/>
-        <source>Client name</source>
-        <translation>Nombre del cliente</translation>
-    </message>
-    <message>
         <location line="+10"/>
         <location line="+23"/>
         <location line="+26"/>
@@ -1133,13 +1128,13 @@ Dirección: %4
     </message>
     <message>
         <location line="+68"/>
-        <source>Using OpenSSL version</source>
-        <translation>Utilizando la versión OpenSSL</translation>
+        <source>using</source>
+        <translation>con la ayuda de</translation>
     </message>
     <message>
         <location line="+49"/>
-        <source>Startup time</source>
-        <translation>Hora de inicio</translation>
+        <source>Launch date</source>
+        <translation>Fecha de inicio</translation>
     </message>
     <message>
         <location line="+29"/>
@@ -1183,12 +1178,12 @@ Dirección: %4
     </message>
     <message>
         <location line="+16"/>
-        <source>Command-line options</source>
+        <source>Command line options</source>
         <translation>Opciones de la línea de órdenes</translation>
     </message>
     <message>
         <location line="+7"/>
-        <source>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command-line options.</source>
+        <source>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command line options.</source>
         <translation>Mostrar el mensaje de ayuda de Phoenixcoin-Qt que enumera las opciones disponibles de línea de órdenes para Phoenixcoin.</translation>
     </message>
     <message>

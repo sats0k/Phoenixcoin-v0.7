@@ -23,13 +23,13 @@
         <source>
 This is experimental software.
 
-Distributed under the MIT/X11 software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php.
+Distributed under the MIT/X11 software licence, see the accompanying file LICENCE or http://opensource.org/license/mit
 
 This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/) and cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP software written by Thomas Bernard.</source>
         <translation>
 This is experimental software.
 
-Distributed under the MIT/X11 software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php.
+Distributed under the MIT/X11 software licence, see the accompanying file LICENCE or http://opensource.org/license/mit
 
 This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/) and cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP software written by Thomas Bernard.</translation>
     </message>
@@ -755,8 +755,8 @@ Address: %4
     </message>
     <message>
         <location line="+1"/>
-        <source>command-line options</source>
-        <translation>command-line options</translation>
+        <source>command line options</source>
+        <translation>command line options</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -1105,11 +1105,6 @@ Address: %4
 <context>
     <name>RPCConsole</name>
     <message>
-        <location filename="../forms/rpcconsole.ui" line="+46"/>
-        <source>Client name</source>
-        <translation>Client name</translation>
-    </message>
-    <message>
         <location line="+10"/>
         <location line="+23"/>
         <location line="+26"/>
@@ -1135,13 +1130,13 @@ Address: %4
     </message>
     <message>
         <location line="+68"/>
-        <source>Using OpenSSL version</source>
-        <translation>Using OpenSSL version</translation>
+        <source>using</source>
+        <translation>using</translation>
     </message>
     <message>
         <location line="+49"/>
-        <source>Startup time</source>
-        <translation>Startup time</translation>
+        <source>Launch date</source>
+        <translation>Launch date</translation>
     </message>
     <message>
         <location line="+29"/>
@@ -1185,13 +1180,13 @@ Address: %4
     </message>
     <message>
         <location line="+16"/>
-        <source>Command-line options</source>
-        <translation>Command-line options</translation>
+        <source>Command line options</source>
+        <translation>Command line options</translation>
     </message>
     <message>
         <location line="+7"/>
-        <source>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command-line options.</source>
-        <translation>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command-line options.</translation>
+        <source>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command line options.</source>
+        <translation>Show the Phoenixcoin-Qt help message to get a list with possible Phoenixcoin command line options.</translation>
     </message>
     <message>
         <location line="+3"/>

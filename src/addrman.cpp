@@ -1,12 +1,12 @@
 // Copyright (c) 2012 Pieter Wuille
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <algorithm>
 
-#include "util.h"
 #include "netbase.h"
 #include "protocol.h"
+#include "util.h"
 #include "addrman.h"
 
 using namespace std;
@@ -16,12 +16,12 @@ int CAddrInfo::GetTriedBucket(const std::vector<unsigned char> &nKey) const
     CDataStream ss1(SER_GETHASH, 0);
     std::vector<unsigned char> vchKey = GetKey();
     ss1 << nKey << vchKey;
-    uint64 hash1 = Hash(ss1.begin(), ss1.end()).Get64();
+    uint64 hash1 = Hash(ss1.begin(), ss1.end()).GetLow64();
 
     CDataStream ss2(SER_GETHASH, 0);
     std::vector<unsigned char> vchGroupKey = GetGroup();
     ss2 << nKey << vchGroupKey << (hash1 % ADDRMAN_TRIED_BUCKETS_PER_GROUP);
-    uint64 hash2 = Hash(ss2.begin(), ss2.end()).Get64();
+    uint64 hash2 = Hash(ss2.begin(), ss2.end()).GetLow64();
     return hash2 % ADDRMAN_TRIED_BUCKET_COUNT;
 }
 
@@ -31,11 +31,11 @@ int CAddrInfo::GetNewBucket(const std::vector<unsigned char> &nKey, const CNetAd
     std::vector<unsigned char> vchGroupKey = GetGroup();
     std::vector<unsigned char> vchSourceGroupKey = src.GetGroup();
     ss1 << nKey << vchGroupKey << vchSourceGroupKey;
-    uint64 hash1 = Hash(ss1.begin(), ss1.end()).Get64();
+    uint64 hash1 = Hash(ss1.begin(), ss1.end()).GetLow64();
 
     CDataStream ss2(SER_GETHASH, 0);
     ss2 << nKey << vchSourceGroupKey << (hash1 % ADDRMAN_NEW_BUCKETS_PER_SOURCE_GROUP);
-    uint64 hash2 = Hash(ss2.begin(), ss2.end()).Get64();
+    uint64 hash2 = Hash(ss2.begin(), ss2.end()).GetLow64();
     return hash2 % ADDRMAN_NEW_BUCKET_COUNT;
 }
 

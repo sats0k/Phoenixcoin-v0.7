@@ -1,17 +1,16 @@
+#include <QDateTime>
+#include <QTimer>
+
+#include "init.h"
+#include "alert.h"
+#include "main.h"
+#include "ui_interface.h"
+
 #include "clientmodel.h"
 #include "guiconstants.h"
 #include "optionsmodel.h"
 #include "addresstablemodel.h"
 #include "transactiontablemodel.h"
-
-#include "alert.h"
-#include "main.h"
-#include "ui_interface.h"
-
-#include <QDateTime>
-#include <QTimer>
-
-static const int64 nClientStartupTime = GetTime();
 
 ClientModel::ClientModel(OptionsModel *optionsModel, QObject *parent) :
     QObject(parent), optionsModel(optionsModel),
@@ -156,19 +155,17 @@ QString ClientModel::formatFullVersion() const
     return QString::fromStdString(FormatFullVersion());
 }
 
-QString ClientModel::formatBuildDate() const
-{
-    return QString::fromStdString(CLIENT_DATE);
+QString ClientModel::formatBuildDateTime() const {
+    return(QString::fromStdString(CLIENT_BUILD_DATE_TIME));
+}
+
+QString ClientModel::formatLaunchDateTime() const {
+    return(QString::fromStdString(strClientLaunchDateTime));
 }
 
 QString ClientModel::clientName() const
 {
     return QString::fromStdString(CLIENT_NAME);
-}
-
-QString ClientModel::formatClientStartupTime() const
-{
-    return QDateTime::fromTime_t(nClientStartupTime).toString();
 }
 
 // Handlers for core signals

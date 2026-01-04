@@ -1,16 +1,17 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #ifndef UINT256_H
 #define UINT256_H
 
+#include <string>
+#include <vector>
+
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
-#include <string>
-#include <vector>
 
 #include "datatypes.h"
 
@@ -348,7 +349,7 @@ public:
         return sizeof(pn);
     }
 
-    uint64 Get64(int n=0) const
+    uint64 GetLow64(int n=0) const
     {
         return pn[2*n] | (uint64)pn[2*n+1] << 32;
     }

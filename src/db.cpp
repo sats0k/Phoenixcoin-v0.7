@@ -1,9 +1,13 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #include <algorithm>
+
+#ifndef WINDOWS
+#include "sys/stat.h"
+#endif
 
 #include <boost/version.hpp>
 #include <boost/filesystem.hpp>
@@ -12,11 +16,8 @@
 
 #include "util.h"
 #include "main.h"
+#include "checkpoints.h" /* for hashSyncCheckpoint */
 #include "db.h"
-
-#ifndef WINDOWS
-#include "sys/stat.h"
-#endif
 
 using namespace std;
 using namespace boost;
@@ -467,7 +468,8 @@ void CDBEnv::Flush(bool fShutdown)
             else
                 mi++;
         }
-        printf("DBFlush(%s)%s ended %15" PRI64d"ms\n", fShutdown ? "true" : "false", fDbEnvInit ? "" : " db not started", GetTimeMillis() - nStart);
+        printf("DBFlush(%s)%s ended %15" PRI64d "ms\n", fShutdown ? "true" : "false",
+          fDbEnvInit ? "" : " db not started", GetTimeMillis() - nStart);
         if (fShutdown)
         {
             char** listp;
@@ -577,6 +579,22 @@ bool CTxDB::WriteBestInvalidWork(CBigNum bnBestInvalidWork)
     return Write(string("bnBestInvalidWork"), bnBestInvalidWork);
 }
 
+bool CTxDB::ReadSyncCheckpoint(uint256 &hashCheckpoint) {
+    return(Read(string("hashSyncCheckpoint"), hashCheckpoint));
+}
+
+bool CTxDB::WriteSyncCheckpoint(uint256 hashCheckpoint) {
+    return(Write(string("hashSyncCheckpoint"), hashCheckpoint));
+}
+
+bool CTxDB::ReadCheckpointPubKey(string &strPubKey) {
+    return(Read(string("strCheckpointPubKey"), strPubKey));
+}
+
+bool CTxDB::WriteCheckpointPubKey(const string &strPubKey) {
+    return(Write(string("strCheckpointPubKey"), strPubKey));
+}
+
 CBlockIndex static * InsertBlockIndex(uint256 hash)
 {
     if (hash == 0)
@@ -635,6 +653,14 @@ bool CTxDB::LoadBlockIndex()
     printf("LoadBlockIndex(): hashBestChain=%s  height=%d  date=%s\n",
       hashBestChain.ToString().substr(0,20).c_str(), nBestHeight,
       DateTimeStrFormat("%x %H:%M:%S", pindexBest->GetBlockTime()).c_str());
+
+    /* Load sync checkpoint */
+    if(!ReadSyncCheckpoint(Checkpoints::hashSyncCheckpoint)) {
+        printf("LoadBlockIndex(): advanced checkpoint cannot be read\n");
+    } else {
+        printf("LoadBlockIndex(): advanced checkpoint is %s\n",
+          Checkpoints::hashSyncCheckpoint.ToString().c_str());
+    }
 
     // Load bnBestInvalidWork, OK if it doesn't exist
     ReadBestInvalidWork(bnBestInvalidWork);

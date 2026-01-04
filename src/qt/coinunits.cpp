@@ -1,21 +1,18 @@
-#include "coinunits.h"
-
 #include <QStringList>
 
+#include "coinunits.h"
+
 CoinUnits::CoinUnits(QObject *parent):
-        QAbstractListModel(parent),
-        unitlist(availableUnits())
-{
-}
+    QAbstractListModel(parent), unitlist(availableUnits()) { }
 
 QList<CoinUnits::Unit> CoinUnits::availableUnits() {
     QList<CoinUnits::Unit> unitlist;
     unitlist.append(PXC);
-    unitlist.append(PXCni);
+    unitlist.append(PXCphi);
     unitlist.append(mPXC);
-    unitlist.append(mPXCni);
+    unitlist.append(mPXCphi);
     unitlist.append(uPXC);
-    unitlist.append(uPXCni);
+    unitlist.append(uPXCphi);
     return(unitlist);
 }
 
@@ -23,11 +20,11 @@ bool CoinUnits::valid(int unit) {
 
     switch(unit) {
         case(PXC):
-        case(PXCni):
+        case(PXCphi):
         case(mPXC):
-        case(mPXCni):
+        case(mPXCphi):
         case(uPXC):
-        case(uPXCni):
+        case(uPXCphi):
           return(true);
         default:
           return(false);
@@ -38,11 +35,11 @@ QString CoinUnits::name(int unit) {
 
     switch(unit) {
         case(PXC): return(QString("PXC"));
-        case(PXCni): return(QString::fromUtf8("𐀛"));
+        case(PXCphi): return(QString::fromUtf8("Φ"));
         case(mPXC): return(QString("mPXC"));
-        case(mPXCni): return(QString::fromUtf8("m𐀛"));
+        case(mPXCphi): return(QString::fromUtf8("mΦ"));
         case(uPXC): return(QString::fromUtf8("μPXC"));
-        case(uPXCni): return(QString::fromUtf8("μ𐀛"));
+        case(uPXCphi): return(QString::fromUtf8("μΦ"));
         default: return(QString("???"));
     }
 }
@@ -51,13 +48,13 @@ QString CoinUnits::description(int unit) {
 
     switch(unit) {
         case(PXC):
-        case(PXCni):
+        case(PXCphi):
             return(QString("Phoenixcoins"));
         case(mPXC):
-        case(mPXCni):
+        case(mPXCphi):
             return(QString("Milli-Phoenixcoins (1 / 1,000)"));
         case(uPXC):
-        case(uPXCni):
+        case(uPXCphi):
             return(QString("Micro-Phoenixcoins (1 / 1,000,000)"));
         default: return(QString("???"));
     }
@@ -67,13 +64,13 @@ qint64 CoinUnits::factor(int unit) {
 
     switch(unit) {
         case(PXC):
-        case(PXCni):
+        case(PXCphi):
             return(100000000);
         case(mPXC):
-        case(mPXCni):
+        case(mPXCphi):
             return(100000);
         case(uPXC):
-        case(uPXCni):
+        case(uPXCphi):
             return(100);
         default: return(100000000);
     }
@@ -83,13 +80,13 @@ int CoinUnits::amountDigits(int unit) {
 
     switch(unit) {
         case(PXC):
-        case(PXCni):
+        case(PXCphi):
             return(8);
         case(mPXC):
-        case(mPXCni):
+        case(mPXCphi):
             return(11);
         case(uPXC):
-        case(uPXCni):
+        case(uPXCphi):
             return(14);
         default: return(0);
     }
@@ -99,13 +96,13 @@ int CoinUnits::decimals(int unit) {
 
     switch(unit) {
         case(PXC):
-        case(PXCni):
+        case(PXCphi):
             return(8);
         case(mPXC):
-        case(mPXCni):
+        case(mPXCphi):
             return(5);
         case(uPXC):
-        case(uPXCni):
+        case(uPXCphi):
             return(2);
         default: return(0);
     }

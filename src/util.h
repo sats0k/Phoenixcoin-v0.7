@@ -1,7 +1,7 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// Distributed under the MIT/X11 software licence, see the accompanying
+// file LICENCE or http://opensource.org/license/mit
 
 #ifndef UTIL_H
 #define UTIL_H
@@ -10,21 +10,21 @@
 #include <string>
 #include <algorithm>
 #include <vector>
+#include <cstring> // for memcpy
 
-#include "datatypes.h"
-#include "compat.h"
-
-#include "uint256.h"
-#include "serialize.h"
-
-#include <boost/thread.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/path.hpp>
 #include <boost/date_time/gregorian/gregorian_types.hpp>
 #include <boost/date_time/posix_time/posix_time_types.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
+#include <boost/thread.hpp>
 
+#include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <openssl/ripemd.h>
+
+#include "compat.h"
+#include "uint256.h"
+#include "serialize.h"
 
 static const int64 COIN = 100000000;
 static const int64 CENT = 1000000;
@@ -70,22 +70,6 @@ inline void Sleep(int64 n)
 }
 #endif
 
-/* This GNU C extension enables the compiler to check the format string against the parameters provided.
- * X is the number of the "format string" parameter, and Y is the number of the first variadic parameter.
- * Parameters count from 1.
- */
-#ifdef __GNUC__
-#define ATTR_WARN_PRINTF(X,Y) __attribute__((format(printf,X,Y)))
-#else
-#define ATTR_WARN_PRINTF(X,Y)
-#endif
-
-
-
-
-
-
-
 
 extern std::map<std::string, std::string> mapArgs;
 extern std::map<std::string, std::vector<std::string> > mapMultiArgs;
@@ -111,33 +95,6 @@ extern int64 nPeersOffset;
 
 void RandAddSeed();
 void RandAddSeedPerfmon();
-int ATTR_WARN_PRINTF(1,2) OutputDebugStringF(const char* pszFormat, ...);
-
-/*
-  Rationale for the real_strprintf / strprintf construction:
-    It is not allowed to use va_start with a pass-by-reference argument.
-    (C++ standard, 18.7, paragraph 3). Use a dummy argument to work around this, and use a
-    macro to keep similar semantics.
-*/
-
-/** Overload strprintf for char*, so that GCC format type warnings can be given */
-std::string ATTR_WARN_PRINTF(1,3) real_strprintf(const char *format, int dummy, ...);
-/** Overload strprintf for std::string, to be able to use it with _ (translation).
- * This will not support GCC format type warnings (-Wformat) so be careful.
- */
-std::string real_strprintf(const std::string &format, int dummy, ...);
-#define strprintf(format, ...) real_strprintf(format, 0, __VA_ARGS__)
-std::string vstrprintf(const char *format, va_list ap);
-
-bool ATTR_WARN_PRINTF(1,2) error(const char *format, ...);
-
-/* Redefine printf so that it directs output to debug.log
- *
- * Do this *after* defining the other printf-like functions, because otherwise the
- * __attribute__((format(printf,X,Y))) gets expanded to __attribute__((format(OutputDebugStringF,X,Y)))
- * which confuses gcc.
- */
-#define printf OutputDebugStringF
 
 void LogException(std::exception* pex, const char* pszThread);
 void PrintException(std::exception* pex, const char* pszThread);
@@ -169,9 +126,6 @@ boost::filesystem::path GetConfigFile();
 boost::filesystem::path GetPidFile();
 void CreatePidFile(const boost::filesystem::path &path, pid_t pid);
 void ReadConfigFile(std::map<std::string, std::string>& mapSettingsRet, std::map<std::string, std::vector<std::string> >& mapMultiSettingsRet);
-#ifdef WINDOWS
-boost::filesystem::path GetSpecialFolderPath(int nFolder, bool fCreate = true);
-#endif
 void ShrinkDebugFile();
 int GetRandInt(int nMax);
 uint64 GetRand(uint64 nMax);
@@ -184,21 +138,51 @@ std::string FormatSubVersion(const std::string& name, int nClientVersion, const 
 void runCommand(std::string strCommand);
 
 
+/* This GNU C extension enables the compiler to check the format string against the parameters provided.
+ * X is the number of the "format string" parameter, and Y is the number of the first variadic parameter.
+ * Parameters count from 1.
+ */
+#ifdef __GNUC__
+#define ATTR_WARN_PRINTF(X,Y) __attribute__((format(printf,X,Y)))
+#else
+#define ATTR_WARN_PRINTF(X,Y)
+#endif
+
+int ATTR_WARN_PRINTF(1,2) OutputDebugStringF(const char *pszFormat, ...);
+
+/*
+  Rationale for the real_strprintf / strprintf construction:
+    It is not allowed to use va_start with a pass-by-reference argument.
+    (C++ standard, 18.7, paragraph 3). Use a dummy argument to work around this, and use a
+    macro to keep similar semantics.
+*/
+
+/** Overload strprintf for char*, so that GCC format type warnings can be given */
+std::string ATTR_WARN_PRINTF(1,3) real_strprintf(const char *format, int dummy, ...);
+/** Overload strprintf for std::string, to be able to use it with _ (translation).
+ * This will not support GCC format type warnings (-Wformat) so be careful.
+ */
+std::string real_strprintf(const std::string &format, int dummy, ...);
+#define strprintf(format, ...) real_strprintf(format, 0, __VA_ARGS__)
+std::string vstrprintf(const char *format, va_list ap);
+
+bool ATTR_WARN_PRINTF(1,2) error(const char *format, ...);
+
+/* Redefine printf so that it directs output to debug.log
+ *
+ * Do this *after* defining the other printf-like functions, because otherwise the
+ * __attribute__((format(printf,X,Y))) gets expanded to __attribute__((format(OutputDebugStringF,X,Y)))
+ * which confuses gcc.
+ */
+#define printf OutputDebugStringF
 
 
-
-
-
-
-
-inline std::string i64tostr(int64 n)
-{
-    return strprintf("%" PRI64d, n);
+inline std::string i64tostr(int64 n) {
+    return(strprintf("%" PRI64d "", n));
 }
 
-inline std::string itostr(int n)
-{
-    return strprintf("%d", n);
+inline std::string itostr(int n) {
+    return(strprintf("%d", n));
 }
 
 inline int64 atoi64(const char* psz)
@@ -400,31 +384,53 @@ inline uint256 Hash(const T1 pbegin, const T1 pend)
 class CHashWriter
 {
 private:
-    SHA256_CTX ctx;
+    EVP_MD_CTX* ctx;  // EVP message digest context
 
 public:
     int nType;
     int nVersion;
 
     void Init() {
-        SHA256_Init(&ctx);
+        ctx = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
     }
 
     CHashWriter(int nTypeIn, int nVersionIn) : nType(nTypeIn), nVersion(nVersionIn) {
         Init();
     }
 
+    ~CHashWriter() {
+        if (ctx) {
+            EVP_MD_CTX_free(ctx);
+        }
+    }
+
     CHashWriter& write(const char *pch, size_t size) {
-        SHA256_Update(&ctx, pch, size);
+        EVP_DigestUpdate(ctx, pch, size);
         return (*this);
     }
 
     // invalidates the object
     uint256 GetHash() {
+        unsigned char hash[EVP_MAX_MD_SIZE];
+        unsigned int length = 0;
+
+        EVP_DigestFinal_ex(ctx, hash, &length);
+
+        // Re-initialize context to avoid reuse issues
+        EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+
         uint256 hash1;
-        SHA256_Final((unsigned char*)&hash1, &ctx);
+        memcpy(&hash1, hash, sizeof(hash1));
+
+        // Double SHA256 as in original
         uint256 hash2;
-        SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+        EVP_MD_CTX* ctx2 = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(ctx2, EVP_sha256(), nullptr);
+        EVP_DigestUpdate(ctx2, &hash1, sizeof(hash1));
+        EVP_DigestFinal_ex(ctx2, (unsigned char*)&hash2, &length);
+        EVP_MD_CTX_free(ctx2);
+
         return hash2;
     }
 
@@ -436,23 +442,40 @@ public:
     }
 };
 
-
+// Hash function for two ranges
 template<typename T1, typename T2>
 inline uint256 Hash(const T1 p1begin, const T1 p1end,
                     const T2 p2begin, const T2 p2end)
 {
     static unsigned char pblank[1];
     uint256 hash1;
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, (p1begin == p1end ? pblank : (unsigned char*)&p1begin[0]), (p1end - p1begin) * sizeof(p1begin[0]));
-    SHA256_Update(&ctx, (p2begin == p2end ? pblank : (unsigned char*)&p2begin[0]), (p2end - p2begin) * sizeof(p2begin[0]));
-    SHA256_Final((unsigned char*)&hash1, &ctx);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+
+    const unsigned char* p1ptr = (p1begin == p1end ? pblank : (unsigned char*)&p1begin[0]);
+    size_t p1len = (p1end - p1begin) * sizeof(p1begin[0]);
+    EVP_DigestUpdate(ctx, p1ptr, p1len);
+
+    const unsigned char* p2ptr = (p2begin == p2end ? pblank : (unsigned char*)&p2begin[0]);
+    size_t p2len = (p2end - p2begin) * sizeof(p2begin[0]);
+    EVP_DigestUpdate(ctx, p2ptr, p2len);
+
+    unsigned int length = 0;
+    EVP_DigestFinal_ex(ctx, (unsigned char*)&hash1, &length);
+    EVP_MD_CTX_free(ctx);
+
+    // Double SHA256
     uint256 hash2;
-    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    EVP_MD_CTX* ctx2 = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx2, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(ctx2, &hash1, sizeof(hash1));
+    EVP_DigestFinal_ex(ctx2, (unsigned char*)&hash2, &length);
+    EVP_MD_CTX_free(ctx2);
+
     return hash2;
 }
 
+// Hash function for three ranges
 template<typename T1, typename T2, typename T3>
 inline uint256 Hash(const T1 p1begin, const T1 p1end,
                     const T2 p2begin, const T2 p2end,
@@ -460,14 +483,33 @@ inline uint256 Hash(const T1 p1begin, const T1 p1end,
 {
     static unsigned char pblank[1];
     uint256 hash1;
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, (p1begin == p1end ? pblank : (unsigned char*)&p1begin[0]), (p1end - p1begin) * sizeof(p1begin[0]));
-    SHA256_Update(&ctx, (p2begin == p2end ? pblank : (unsigned char*)&p2begin[0]), (p2end - p2begin) * sizeof(p2begin[0]));
-    SHA256_Update(&ctx, (p3begin == p3end ? pblank : (unsigned char*)&p3begin[0]), (p3end - p3begin) * sizeof(p3begin[0]));
-    SHA256_Final((unsigned char*)&hash1, &ctx);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr);
+
+    const unsigned char* p1ptr = (p1begin == p1end ? pblank : (unsigned char*)&p1begin[0]);
+    size_t p1len = (p1end - p1begin) * sizeof(p1begin[0]);
+    EVP_DigestUpdate(ctx, p1ptr, p1len);
+
+    const unsigned char* p2ptr = (p2begin == p2end ? pblank : (unsigned char*)&p2begin[0]);
+    size_t p2len = (p2end - p2begin) * sizeof(p2begin[0]);
+    EVP_DigestUpdate(ctx, p2ptr, p2len);
+
+    const unsigned char* p3ptr = (p3begin == p3end ? pblank : (unsigned char*)&p3begin[0]);
+    size_t p3len = (p3end - p3begin) * sizeof(p3begin[0]);
+    EVP_DigestUpdate(ctx, p3ptr, p3len);
+
+    unsigned int length = 0;
+    EVP_DigestFinal_ex(ctx, (unsigned char*)&hash1, &length);
+    EVP_MD_CTX_free(ctx);
+
+    // Double SHA256
     uint256 hash2;
-    SHA256((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    EVP_MD_CTX* ctx2 = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx2, EVP_sha256(), nullptr);
+    EVP_DigestUpdate(ctx2, &hash1, sizeof(hash1));
+    EVP_DigestFinal_ex(ctx2, (unsigned char*)&hash2, &length);
+    EVP_MD_CTX_free(ctx2);
+
     return hash2;
 }
 
@@ -483,8 +525,40 @@ inline uint160 Hash160(const std::vector<unsigned char>& vch)
 {
     uint256 hash1;
     SHA256(&vch[0], vch.size(), (unsigned char*)&hash1);
+
     uint160 hash2;
-    RIPEMD160((unsigned char*)&hash1, sizeof(hash1), (unsigned char*)&hash2);
+    unsigned int len = 0;
+
+    // Initialize EVP_MD_CTX
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx)
+    {
+        // handle error
+        throw std::runtime_error("Failed to create EVP_MD_CTX");
+    }
+
+    // Initialize digest context for RIPEMD160
+    if (1 != EVP_DigestInit_ex(ctx, EVP_ripemd160(), NULL))
+    {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("EVP_DigestInit_ex failed");
+    }
+
+    // Perform digest
+    if (1 != EVP_DigestUpdate(ctx, &hash1, sizeof(hash1)))
+    {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("EVP_DigestUpdate failed");
+    }
+
+    // Finalize digest
+    if (1 != EVP_DigestFinal_ex(ctx, (unsigned char*)&hash2, &len))
+    {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("EVP_DigestFinal_ex failed");
+    }
+
+    EVP_MD_CTX_free(ctx);
     return hash2;
 }
 
