@@ -132,6 +132,7 @@ OBJS = \
     obj/version.o \
     obj/wallet.o \
     obj/walletdb.o \
+    obj/hybrid_signer.o \
     obj/neoscrypt.o \
     obj/neoscrypt_asm.o
 

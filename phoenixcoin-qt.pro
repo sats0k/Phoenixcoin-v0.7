@@ -229,6 +229,7 @@ HEADERS += src/qt/gui.h \
     src/clientversion.h \
     src/neoscrypt.h \
     src/ntp.h \
+    src/hybrid_signer.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
 
@@ -298,6 +299,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/neoscrypt.c \
     src/neoscrypt_asm.S \
     src/ntp.cpp \
+    src/hybrid_signer.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
 
