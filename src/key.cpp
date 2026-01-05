@@ -6,7 +6,7 @@
 #include "key.h"
 
 /* ----------  Global secp256k1 context ---------- */
-static secp256k1_context* ctx = [] {
+static secp256k1_context* g_secp256k1_ctx = [] {
     return secp256k1_context_create(SECP256K1_CONTEXT_SIGN |
                                     SECP256K1_CONTEXT_VERIFY);
 }();
@@ -69,17 +69,17 @@ CPubKey RecoverPubKey(const uint256& hash, const uchar sig64[64], int recid,
     secp256k1_ecdsa_recoverable_signature rsig;
     secp256k1_pubkey pub;
 
-    if (!secp256k1_ecdsa_recoverable_signature_parse_compact(ctx, &rsig, sig64,
-                                                             recid))
+    if (!secp256k1_ecdsa_recoverable_signature_parse_compact(
+            g_secp256k1_ctx, &rsig, sig64, recid))
         return CPubKey();
 
-    if (!secp256k1_ecdsa_recover(ctx, &pub, &rsig,
+    if (!secp256k1_ecdsa_recover(g_secp256k1_ctx, &pub, &rsig,
                                  reinterpret_cast<const uchar*>(&hash)))
         return CPubKey();
 
     uchar out[65];
     size_t len = 65;
-    secp256k1_ec_pubkey_serialize(ctx, out, &len, &pub,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pub,
                                   SECP256K1_EC_UNCOMPRESSED);
     return CPubKey(std::vector<uchar>(out, out + len));
 }
@@ -98,15 +98,15 @@ void CKey::MakeNewKey(bool fCompressed) {
     do {
         if (RAND_bytes(secret.data(), 32) != 1)
             throw key_error("RAND_bytes failed");
-    } while (!secp256k1_ec_seckey_verify(ctx, secret.data()));
+    } while (!secp256k1_ec_seckey_verify(g_secp256k1_ctx, secret.data()));
 
     secp256k1_pubkey pub;
-    if (!secp256k1_ec_pubkey_create(ctx, &pub, secret.data()))
+    if (!secp256k1_ec_pubkey_create(g_secp256k1_ctx, &pub, secret.data()))
         throw key_error("Failed to create public key");
 
     uchar out[65];
     size_t len = 65;
-    secp256k1_ec_pubkey_serialize(ctx, out, &len, &pub,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pub,
                                   SECP256K1_EC_UNCOMPRESSED);
     EVP_PKEY* tmp = MakePKeyFromSecret(secret.data(), secret.size(), out, len);
     if (!tmp) throw key_error("EVP_PKEY creation failed");
@@ -149,14 +149,14 @@ bool CKey::SetPrivKey(const CPrivKey& vchPrivKey) {
     BN_clear_free(bn);
 
     secp256k1_pubkey pub;
-    if (!secp256k1_ec_pubkey_create(ctx, &pub, secret.data())) {
+    if (!secp256k1_ec_pubkey_create(g_secp256k1_ctx, &pub, secret.data())) {
         EVP_PKEY_free(tmp);
         return false;
     }
 
     uchar out[65];
     size_t len = 65;
-    secp256k1_ec_pubkey_serialize(ctx, out, &len, &pub,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pub,
                                   SECP256K1_EC_UNCOMPRESSED);
 
     pkey = tmp;
@@ -170,14 +170,16 @@ bool CKey::SetSecret(const CSecret& secret, bool fCompressed) {
     Reset();
 
     if (secret.size() != 32) return false;
-    if (!secp256k1_ec_seckey_verify(ctx, secret.data())) return false;
+    if (!secp256k1_ec_seckey_verify(g_secp256k1_ctx, secret.data()))
+        return false;
 
     secp256k1_pubkey pub;
-    if (!secp256k1_ec_pubkey_create(ctx, &pub, secret.data())) return false;
+    if (!secp256k1_ec_pubkey_create(g_secp256k1_ctx, &pub, secret.data()))
+        return false;
 
     uchar out[65];
     size_t len = 65;
-    secp256k1_ec_pubkey_serialize(ctx, out, &len, &pub,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pub,
                                   SECP256K1_EC_UNCOMPRESSED);
 
     EVP_PKEY* tmp = MakePKeyFromSecret(secret.data(), secret.size(), out, len);
@@ -256,17 +258,18 @@ bool CKey::Sign(uint256 hash, std::vector<uchar>& sig) const {
     if (!fSet) return false;
 
     secp256k1_ecdsa_signature signature;
-    if (!secp256k1_ecdsa_sign(ctx, &signature, hash.begin(), vchSecret.data(),
-                              nullptr, nullptr))
+    if (!secp256k1_ecdsa_sign(g_secp256k1_ctx, &signature, hash.begin(),
+                              vchSecret.data(), nullptr, nullptr))
         return false;
 
     secp256k1_ecdsa_signature sig_norm;
-    secp256k1_ecdsa_signature_normalize(ctx, &sig_norm, &signature);
+    secp256k1_ecdsa_signature_normalize(g_secp256k1_ctx, &sig_norm, &signature);
     signature = sig_norm;
 
     uchar der[72];
     size_t derlen = sizeof(der);
-    secp256k1_ecdsa_signature_serialize_der(ctx, der, &derlen, &signature);
+    secp256k1_ecdsa_signature_serialize_der(g_secp256k1_ctx, der, &derlen,
+                                            &signature);
     sig.assign(der, der + derlen);
     return true;
 }
@@ -282,8 +285,8 @@ bool CKey::SignCompact(const uint256& hash, std::vector<uchar>& vchSig) const {
     secp256k1_ecdsa_recoverable_signature sig;
 
     int signResult = secp256k1_ecdsa_sign_recoverable(
-        ctx, &sig, hashData, privkey, secp256k1_nonce_function_rfc6979,
-        nullptr);
+        g_secp256k1_ctx, &sig, hashData, privkey,
+        secp256k1_nonce_function_rfc6979, nullptr);
 
     if (signResult != 1) {
         printf("Signing failed with code: %d\n", signResult);
@@ -293,8 +296,8 @@ bool CKey::SignCompact(const uint256& hash, std::vector<uchar>& vchSig) const {
     int recid = 0;
     uchar sig64[64];
 
-    secp256k1_ecdsa_recoverable_signature_serialize_compact(ctx, sig64, &recid,
-                                                            &sig);
+    secp256k1_ecdsa_recoverable_signature_serialize_compact(
+        g_secp256k1_ctx, sig64, &recid, &sig);
 
     vchSig[0] = 27 + recid + (fCompressedPubKey ? 4 : 0);
     std::memcpy(&vchSig[1], sig64, 64);
@@ -314,19 +317,20 @@ bool CKey::SetCompactSignature(const uint256& hash,
     int recid = (header - 27) & 3;
 
     secp256k1_ecdsa_recoverable_signature sig;
-    if (!secp256k1_ecdsa_recoverable_signature_parse_compact(ctx, &sig,
-                                                             &vchSig[1], recid))
+    if (!secp256k1_ecdsa_recoverable_signature_parse_compact(
+            g_secp256k1_ctx, &sig, &vchSig[1], recid))
         return false;
 
     uchar hashData[32];
     std::memcpy(hashData, const_cast<uint256&>(hash).begin(), 32);
 
     secp256k1_pubkey pubkey;
-    if (!secp256k1_ecdsa_recover(ctx, &pubkey, &sig, hashData)) return false;
+    if (!secp256k1_ecdsa_recover(g_secp256k1_ctx, &pubkey, &sig, hashData))
+        return false;
 
     uchar out[65];
     size_t len = 65;
-    secp256k1_ec_pubkey_serialize(ctx, out, &len, &pubkey,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pubkey,
                                   SECP256K1_EC_UNCOMPRESSED);
     std::vector<uchar> vchPubKey(out, out + len);
     SetPubKey(CPubKey(vchPubKey));
@@ -338,19 +342,20 @@ bool CKey::SetCompactSignature(const uint256& hash,
 bool CKey::Verify(uint256 hash, const std::vector<uchar>& sig) const {
     secp256k1_pubkey pub;
     std::vector<uchar> pk = vchPubKey.Raw();
-    if (!secp256k1_ec_pubkey_parse(ctx, &pub, pk.data(), pk.size()))
+    if (!secp256k1_ec_pubkey_parse(g_secp256k1_ctx, &pub, pk.data(), pk.size()))
         return false;
 
     secp256k1_ecdsa_signature signature;
-    if (!secp256k1_ecdsa_signature_parse_der(ctx, &signature, sig.data(),
-                                             sig.size()))
+    if (!secp256k1_ecdsa_signature_parse_der(g_secp256k1_ctx, &signature,
+                                             sig.data(), sig.size()))
         return false;
 
     secp256k1_ecdsa_signature sig_norm;
-    secp256k1_ecdsa_signature_normalize(ctx, &sig_norm, &signature);
+    secp256k1_ecdsa_signature_normalize(g_secp256k1_ctx, &sig_norm, &signature);
     signature = sig_norm;
 
-    return secp256k1_ecdsa_verify(ctx, &signature, hash.begin(), &pub);
+    return secp256k1_ecdsa_verify(g_secp256k1_ctx, &signature, hash.begin(),
+                                  &pub);
 }
 
 bool CKey::VerifyCompact(const uint256& hash,
