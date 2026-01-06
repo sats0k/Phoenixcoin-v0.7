@@ -12,6 +12,11 @@
 #include "key.h"
 
 #include <openssl/evp.h>
+#include <openssl/opensslv.h>
+
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
+#error "This Hybrid implementation requires OpenSSL 3.5+"
+#endif
 
 enum class SigAlg : uint8_t {
     ECDSA_SECP256K1 = 0x01,
