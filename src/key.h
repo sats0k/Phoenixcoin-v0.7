@@ -6,6 +6,8 @@
 #ifndef KEY_H
 #define KEY_H
 
+#include "ecies/ecies.h"
+
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
 #include <openssl/crypto.h>
@@ -13,6 +15,7 @@
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 #include <openssl/objects.h>
 #include <openssl/opensslv.h>
 #include <openssl/params.h>
@@ -26,6 +29,7 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "allocators.h"
@@ -80,10 +84,12 @@ class CScriptID : public uint160 {
 
 class CPubKey {
    private:
+    EVP_PKEY *pkey;
     std::vector<uchar> vchPubKey;
     friend class CKey;
 
    public:
+    EVP_PKEY* GetEVPPubKey() const;
     CPubKey() {}
     CPubKey(const std::vector<uchar> &vchPubKeyIn)
         : vchPubKey(vchPubKeyIn) {}
@@ -110,6 +116,9 @@ class CPubKey {
     bool IsCompressed() const { return vchPubKey.size() == 33; }
 
     std::vector<uchar> Raw() const { return vchPubKey; }
+
+    void EncryptData(const std::vector<unsigned char>& plaintext,
+    std::vector<unsigned char>& out);
 };
 
 /* ---------- Private key types ---------- */
@@ -135,6 +144,7 @@ class CKey {
     void SetCompressedPubKey();
 
    public:
+    EVP_PKEY* GetEVPPrivKey() const;
     CKey() : pkey(nullptr), fSet(false), fCompressedPubKey(false) {}
     ~CKey() { Reset(); }
 
@@ -161,6 +171,10 @@ class CKey {
     bool VerifyCompact(const uint256 &hash,
                        const std::vector<uchar> &vchSig) const;
     bool IsValid() const;
+
+    void DecryptData(const std::vector<unsigned char>& enc,
+    std::vector<unsigned char>& out);
+
 };
 
 #endif /* KEY_H */

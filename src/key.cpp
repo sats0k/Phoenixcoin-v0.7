@@ -376,3 +376,218 @@ bool CKey::IsValid() const {
 
     return GetPubKey() == key2.GetPubKey();
 }
+
+/* ---------- EncryptData DecryptData ---------- */
+
+static constexpr size_t NONCE_LEN = 12;
+static constexpr size_t TAG_LEN = 16;
+static constexpr size_t PUBKEY_LEN = 65;
+
+EVP_PKEY* CPubKey::GetEVPPubKey() const {
+    if (!IsValid()) return nullptr;
+
+    EVP_PKEY* tmp = nullptr;
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
+    if (!ctx) return nullptr;
+
+    EVP_PKEY_fromdata_init(ctx);
+
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char*)"secp256k1",
+                               0),
+        OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
+                                (void*)vchPubKey.data(), vchPubKey.size()),
+        OSSL_PARAM_END};
+
+    if (EVP_PKEY_fromdata(ctx, &tmp, EVP_PKEY_PUBLIC_KEY, params) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    return tmp;
+}
+
+EVP_PKEY* CKey::GetEVPPrivKey() const {
+    EVP_PKEY_up_ref(pkey);
+    return pkey;
+}
+
+static bool ECDH_Derive(EVP_PKEY* privkey, EVP_PKEY* pubkey,
+                        unsigned char out[32]) {
+    if (!privkey || !pubkey) return false;
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(privkey, nullptr);
+    if (!ctx) return false;
+
+    size_t outlen = 32;
+
+    bool ok = EVP_PKEY_derive_init(ctx) == 1 &&
+              EVP_PKEY_derive_set_peer(ctx, pubkey) == 1 &&
+              EVP_PKEY_derive(ctx, out, &outlen) == 1 && outlen == 32;
+
+    EVP_PKEY_CTX_free(ctx);
+    return ok;
+}
+
+static bool HKDF_SHA256(const unsigned char* secret, size_t secret_len,
+                        unsigned char* out, size_t out_len) {
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
+    if (!ctx) return false;
+
+    if (EVP_PKEY_derive_init(ctx) != 1) goto err;
+    if (EVP_PKEY_CTX_set_hkdf_md(ctx, EVP_sha256()) != 1) goto err;
+
+    /* No salt is allowed — DO NOT test return value */
+    EVP_PKEY_CTX_set1_hkdf_salt(ctx, nullptr, 0);
+
+    if (EVP_PKEY_CTX_set1_hkdf_key(ctx, secret, secret_len) != 1) goto err;
+    if (EVP_PKEY_CTX_add1_hkdf_info(ctx, (const unsigned char*)"ecdh-aead",
+                                    9) != 1)
+        goto err;
+
+    if (EVP_PKEY_derive(ctx, out, &out_len) != 1) goto err;
+
+    EVP_PKEY_CTX_free(ctx);
+    return true;
+
+err:
+    EVP_PKEY_CTX_free(ctx);
+    return false;
+}
+
+void CPubKey::EncryptData(const std::vector<unsigned char>& plaintext,
+                          std::vector<unsigned char>& out) {
+    if (plaintext.empty()) throw key_error("Empty plaintext");
+
+    // 1. Ephemeral key
+    CKey eph;
+    eph.MakeNewKey(true);
+
+    unsigned char shared[32];
+
+    EVP_PKEY* priv = eph.GetEVPPrivKey();
+    EVP_PKEY* pub = this->GetEVPPubKey();
+
+    if (!ECDH_Derive(priv, pub, shared)) {
+        EVP_PKEY_free(priv);
+        EVP_PKEY_free(pub);
+        throw key_error("ECDH failed");
+    }
+
+    EVP_PKEY_free(priv);
+    EVP_PKEY_free(pub);
+
+    // 2. Derive AEAD key
+    unsigned char aead_key[32];
+    if (!HKDF_SHA256(shared, sizeof(shared), aead_key, sizeof(aead_key)))
+        throw key_error("HKDF failed");
+
+    // 3. Nonce
+    unsigned char nonce[NONCE_LEN];
+    if (RAND_bytes(nonce, sizeof(nonce)) != 1)
+        throw key_error("RAND_bytes failed");
+
+    // 4. Encrypt
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) throw key_error("Cipher ctx alloc failed");
+
+    std::vector<unsigned char> ciphertext(plaintext.size());
+    int len = 0;
+
+    EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_LEN, nullptr);
+    EVP_EncryptInit_ex(ctx, nullptr, nullptr, aead_key, nonce);
+
+    EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(),
+                      plaintext.size());
+    int ct_len = len;
+
+    EVP_EncryptFinal_ex(ctx, ciphertext.data() + len, &len);
+    ct_len += len;
+
+    unsigned char tag[TAG_LEN];
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, TAG_LEN, tag);
+    EVP_CIPHER_CTX_free(ctx);
+
+    // 5. Serialize output
+    out.clear();
+    out.reserve(PUBKEY_LEN + NONCE_LEN + ct_len + TAG_LEN);
+
+    const CPubKey& eph_pub = eph.GetPubKey();
+    const std::vector<uchar>& eph_raw = eph_pub.Raw();
+
+    out.insert(out.end(), eph_raw.begin(), eph_raw.end());
+    out.insert(out.end(), nonce, nonce + NONCE_LEN);
+    out.insert(out.end(), ciphertext.begin(), ciphertext.begin() + ct_len);
+    out.insert(out.end(), tag, tag + TAG_LEN);
+
+    OPENSSL_cleanse(shared, sizeof(shared));
+    OPENSSL_cleanse(aead_key, sizeof(aead_key));
+}
+
+void CKey::DecryptData(const std::vector<unsigned char>& enc,
+                       std::vector<unsigned char>& out) {
+    if (enc.size() < PUBKEY_LEN + NONCE_LEN + TAG_LEN)
+        throw key_error("Ciphertext too short");
+
+    const unsigned char* p = enc.data();
+
+    // 1. Parse ephemeral pubkey
+    CPubKey eph_pub(std::vector<uchar>(p, p + PUBKEY_LEN));
+    if (!eph_pub.IsValid()) throw key_error("Invalid ephemeral pubkey");
+    p += PUBKEY_LEN;
+
+    const unsigned char* nonce = p;
+    p += NONCE_LEN;
+
+    size_t ct_len = enc.size() - PUBKEY_LEN - NONCE_LEN - TAG_LEN;
+    const unsigned char* ciphertext = p;
+    const unsigned char* tag = p + ct_len;
+
+    // 2. ECDH
+    unsigned char shared[32];
+
+    EVP_PKEY* priv = this->GetEVPPrivKey();
+    EVP_PKEY* pub = eph_pub.GetEVPPubKey();
+
+    if (!ECDH_Derive(priv, pub, shared)) {
+        EVP_PKEY_free(priv);
+        EVP_PKEY_free(pub);
+        throw key_error("ECDH failed");
+    }
+
+    EVP_PKEY_free(priv);
+    EVP_PKEY_free(pub);
+
+    // 3. Derive key
+    unsigned char aead_key[32];
+    if (!HKDF_SHA256(shared, sizeof(shared), aead_key, sizeof(aead_key)))
+        throw key_error("HKDF failed");
+
+    // 4. Decrypt
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) throw key_error("Cipher ctx alloc failed");
+
+    out.resize(ct_len);
+    int len = 0;
+
+    EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_LEN, nullptr);
+    EVP_DecryptInit_ex(ctx, nullptr, nullptr, aead_key, nonce);
+
+    EVP_DecryptUpdate(ctx, out.data(), &len, ciphertext, ct_len);
+
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, TAG_LEN, (void*)tag);
+
+    if (EVP_DecryptFinal_ex(ctx, out.data() + len, &len) <= 0) {
+        EVP_CIPHER_CTX_free(ctx);
+        throw key_error("Authentication failed");
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    OPENSSL_cleanse(shared, sizeof(shared));
+    OPENSSL_cleanse(aead_key, sizeof(aead_key));
+}

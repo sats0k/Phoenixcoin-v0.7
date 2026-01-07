@@ -228,6 +228,7 @@ HEADERS += src/qt/gui.h \
     src/netbase.h \
     src/clientversion.h \
     src/neoscrypt.h \
+    src/ecies/ecies.h \
     src/ntp.h \
     src/hybrid_signer.h \
     src/qt/walletmodeltransaction.h \
@@ -275,6 +276,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/qt/transactionview.cpp \
     src/qt/walletmodel.cpp \
     src/rpcmain.cpp \
+    src/rpccrypto.cpp \
     src/rpcdump.cpp \
     src/rpcnet.cpp \
     src/rpcmining.cpp \
@@ -298,6 +300,8 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/noui.cpp \
     src/neoscrypt.c \
     src/neoscrypt_asm.S \
+    src/ecies/secure.cpp \
+    src/ecies/ecies.cpp \
     src/ntp.cpp \
     src/hybrid_signer.cpp \
     src/qt/walletmodeltransaction.cpp \
