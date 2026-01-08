@@ -354,14 +354,15 @@ bool CKey::SetCompactSignature(const uint256& hash,
     if (!secp256k1_ecdsa_recover(g_secp256k1_ctx, &pubkey, &sig, hashData))
         return false;
 
-    unsigned char pubkey_out[65];
-    size_t pubkey_out_len = 65;
+    unsigned char pubkey_out[33];
+    size_t pubkey_out_len = 33;
     secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, pubkey_out, &pubkey_out_len,
-                                  &pubkey, SECP256K1_EC_UNCOMPRESSED);
+                                  &pubkey, SECP256K1_EC_COMPRESSED);
     std::vector<unsigned char> vchPubKey(pubkey_out,
                                          pubkey_out + pubkey_out_len);
     SetPubKey(CPubKey(vchPubKey));
 
+    fCompressedPubKey = true;
     fSet = true;
     return true;
 }
