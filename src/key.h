@@ -6,8 +6,6 @@
 #ifndef KEY_H
 #define KEY_H
 
-#include "ecies/ecies.h"
-
 #include <openssl/bn.h>
 #include <openssl/core_names.h>
 #include <openssl/crypto.h>
@@ -21,12 +19,11 @@
 #include <openssl/params.h>
 #include <openssl/provider.h>
 #include <openssl/rand.h>
-
 #include <secp256k1.h>
 #include <secp256k1_recovery.h>
 
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -37,6 +34,7 @@
 #endif
 
 #include "allocators.h"
+#include "ecies/ecies.h"
 #include "serialize.h"
 #include "util.h"
 
@@ -89,13 +87,13 @@ class CScriptID : public uint160 {
 class CPubKey {
    private:
     EVP_PKEY *pkey;
-    std::vector<uchar> vchPubKey;
+    std::vector<unsigned char> vchPubKey;
     friend class CKey;
 
    public:
-    EVP_PKEY* GetEVPPubKey() const;
+    EVP_PKEY *GetEVPPubKey() const;
     CPubKey() {}
-    CPubKey(const std::vector<uchar> &vchPubKeyIn)
+    CPubKey(const std::vector<unsigned char> &vchPubKeyIn)
         : vchPubKey(vchPubKeyIn) {}
     friend bool operator==(const CPubKey &a, const CPubKey &b) {
         return a.vchPubKey == b.vchPubKey;
@@ -119,19 +117,19 @@ class CPubKey {
 
     bool IsCompressed() const { return vchPubKey.size() == 33; }
 
-    std::vector<uchar> Raw() const { return vchPubKey; }
+    std::vector<unsigned char> Raw() const { return vchPubKey; }
 
-    void EncryptData(const std::vector<unsigned char>& plaintext,
-    std::vector<unsigned char>& out);
+    void EncryptData(const std::vector<unsigned char> &plaintext,
+                     std::vector<unsigned char> &out);
 };
 
 /* ---------- Private key types ---------- */
 
 // Serialized private key
-typedef std::vector<uchar, secure_allocator<uchar> > CPrivKey;
+typedef std::vector<unsigned char, secure_allocator<unsigned char> > CPrivKey;
 
 // Raw 32-byte secret
-typedef std::vector<uchar, secure_allocator<uchar> > CSecret;
+typedef std::vector<unsigned char, secure_allocator<unsigned char> > CSecret;
 
 /* ---------- Private key ---------- */
 
@@ -148,7 +146,7 @@ class CKey {
     void SetCompressedPubKey();
 
    public:
-    EVP_PKEY* GetEVPPrivKey() const;
+    EVP_PKEY *GetEVPPrivKey() const;
     CKey() : pkey(nullptr), fSet(false), fCompressedPubKey(false) {}
     ~CKey() { Reset(); }
 
@@ -166,19 +164,19 @@ class CKey {
     CPrivKey GetPrivKey() const;
     bool SetPubKey(const CPubKey &vchPubKeyIn);
     CPubKey GetPubKey() const;
-    bool Sign(const uint256 hash, std::vector<uchar> &vchSig) const;
+    bool Sign(const uint256 hash, std::vector<unsigned char> &vchSig) const;
     bool SignCompact(const uint256 &hash,
-                     std::vector<uchar> &vchSig) const;
+                     std::vector<unsigned char> &vchSig) const;
     bool SetCompactSignature(const uint256 &hash,
-                             const std::vector<uchar> &vchSig);
-    bool Verify(const uint256 hash, const std::vector<uchar> &vchSig) const;
+                             const std::vector<unsigned char> &vchSig);
+    bool Verify(const uint256 hash,
+                const std::vector<unsigned char> &vchSig) const;
     bool VerifyCompact(const uint256 &hash,
-                       const std::vector<uchar> &vchSig) const;
+                       const std::vector<unsigned char> &vchSig) const;
     bool IsValid() const;
 
-    void DecryptData(const std::vector<unsigned char>& enc,
-    std::vector<unsigned char>& out);
-
+    void DecryptData(const std::vector<unsigned char> &enc,
+                     std::vector<unsigned char> &out);
 };
 
 #endif /* KEY_H */
