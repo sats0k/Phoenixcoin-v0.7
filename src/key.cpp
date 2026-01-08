@@ -145,7 +145,7 @@ void CKey::MakeNewKey(bool fCompressed) {
     pkey = tmp;
     vchSecret = secret;
     vchPubKey = pubkey;
-    fCompressedPubKey = true;
+    fCompressedPubKey = fCompressed;
     fSet = true;
 }
 
@@ -213,7 +213,7 @@ bool CKey::SetSecret(const CSecret& secret, bool fCompressed) {
     pkey = tmp;
     vchSecret = secret;
     vchPubKey = pubkey;
-    fCompressedPubKey = true;
+    fCompressedPubKey = fCompressed;
     fSet = true;
     return true;
 }
@@ -307,7 +307,7 @@ bool CKey::SignCompact(const uint256& hash,
     vchSig.resize(65);
 
     unsigned char hashData[32];
-    std::memcpy(hashData, const_cast<uint256&>(hash).begin(), 32);
+    std::memcpy(hashData, hash.begin(), 32);
     secp256k1_ecdsa_recoverable_signature sig;
 
     int signResult = secp256k1_ecdsa_sign_recoverable(
@@ -348,7 +348,7 @@ bool CKey::SetCompactSignature(const uint256& hash,
         return false;
 
     unsigned char hashData[32];
-    std::memcpy(hashData, const_cast<uint256&>(hash).begin(), 32);
+    std::memcpy(hashData, hash.begin(), 32);
 
     secp256k1_pubkey pubkey;
     if (!secp256k1_ecdsa_recover(g_secp256k1_ctx, &pubkey, &sig, hashData))
@@ -438,6 +438,7 @@ EVP_PKEY* CPubKey::GetEVPPubKey() const {
 }
 
 EVP_PKEY* CKey::GetEVPPrivKey() const {
+    if (!pkey) return nullptr;
     EVP_PKEY_up_ref(pkey);
     return pkey;
 }
@@ -517,6 +518,10 @@ void CPubKey::EncryptData(const std::vector<unsigned char>& plaintext,
     if (RAND_bytes(nonce, sizeof(nonce)) != 1)
         throw key_error("RAND_bytes failed");
 
+    // Ephemeral pubkey (for AAD and serialization)
+    const CPubKey& eph_pub = eph.GetPubKey();
+    const std::vector<unsigned char>& eph_raw = eph_pub.Raw();
+
     // 4. Encrypt
     EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
     if (!ctx) throw key_error("Cipher ctx alloc failed");
@@ -527,6 +532,9 @@ void CPubKey::EncryptData(const std::vector<unsigned char>& plaintext,
     EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_LEN, nullptr);
     EVP_EncryptInit_ex(ctx, nullptr, nullptr, aead_key, nonce);
+
+    // Authenticate ephemeral pubkey
+    EVP_EncryptUpdate(ctx, nullptr, &len, eph_raw.data(), eph_raw.size());
 
     EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(),
                       plaintext.size());
@@ -542,9 +550,6 @@ void CPubKey::EncryptData(const std::vector<unsigned char>& plaintext,
     // 5. Serialize output
     out.clear();
     out.reserve(PUBKEY_LEN + NONCE_LEN + ct_len + TAG_LEN);
-
-    const CPubKey& eph_pub = eph.GetPubKey();
-    const std::vector<unsigned char>& eph_raw = eph_pub.Raw();
 
     out.insert(out.end(), eph_raw.begin(), eph_raw.end());
     out.insert(out.end(), nonce, nonce + NONCE_LEN);
@@ -604,6 +609,9 @@ void CKey::DecryptData(const std::vector<unsigned char>& enc,
     EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_LEN, nullptr);
     EVP_DecryptInit_ex(ctx, nullptr, nullptr, aead_key, nonce);
+
+    // Authenticate ephemeral pubkey
+    EVP_DecryptUpdate(ctx, nullptr, &len, enc.data(), PUBKEY_LEN);
 
     EVP_DecryptUpdate(ctx, out.data(), &len, ciphertext, ct_len);
 
