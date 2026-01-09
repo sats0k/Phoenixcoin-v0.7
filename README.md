@@ -5,6 +5,10 @@ Do not use this branch for production environments.
 
 Users looking for the production release branch, see [stable](https://github.com/ghostlander/Phoenixcoin).
 
+Minimum requirements:
+OpenSSL v3.5
+Boost v1.89
+
 Phoenixcoin
 ===========
 
