@@ -12,8 +12,8 @@
 #include <openssl/evp.h>
 #include <openssl/opensslv.h>
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-#error "This ECIES implementation requires OpenSSL 3.0+"
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
+#error "This ECIES implementation requires OpenSSL 3.5+"
 #endif
 
 #include <cstddef>
@@ -22,15 +22,15 @@
 using ByteVector = std::vector<unsigned char>;
 
 struct ecies_ctx_t {
-    EVP_PKEY* recipient_pubkey;   // for encrypt
-    EVP_PKEY* recipient_privkey;  // for decrypt
+    EVP_PKEY* recipient_pub;   // for encrypt
+    EVP_PKEY* recipient_priv;  // for decrypt
 };
 
 /* Low-level ECIES */
-bool ECIES_Encrypt(EVP_PKEY* recipient_pubkey, const ByteVector& plaintext,
+bool ECIES_Encrypt(EVP_PKEY* recipient_pub, const ByteVector& plaintext,
                    ByteVector& out);
 
-bool ECIES_Decrypt(EVP_PKEY* recipient_privkey, const ByteVector& enc,
+bool ECIES_Decrypt(EVP_PKEY* recipient_priv, const ByteVector& enc,
                    ByteVector& out);
 
 /* High-level wrappers */
