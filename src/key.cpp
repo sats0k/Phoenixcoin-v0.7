@@ -58,7 +58,20 @@ static EVP_PKEY* MakePKeyFromSecret(const unsigned char* secret,
 
     static OSSL_LIB_CTX* libctx = [] {
         OSSL_LIB_CTX* c = OSSL_LIB_CTX_new();
-        OSSL_PROVIDER_load(c, "default");
+        if (!c) {
+            throw std::runtime_error("Failed to create library context");
+        }
+
+        OSSL_PROVIDER* oqs = OSSL_PROVIDER_load(c, "oqs");
+        OSSL_PROVIDER* def = OSSL_PROVIDER_load(c, "default");
+
+        if (!oqs || !def) {
+            if (oqs) OSSL_PROVIDER_unload(oqs);
+            if (def) OSSL_PROVIDER_unload(def);
+            OSSL_LIB_CTX_free(c);
+            throw std::runtime_error("Failed to load OQS or default provider");
+        }
+
         return c;
     }();
 
