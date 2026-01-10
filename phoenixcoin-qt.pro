@@ -299,9 +299,8 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/noui.cpp \
     src/neoscrypt.c \
     src/neoscrypt_asm.S \
-    src/ecies/secure.c \
-    src/ecies/ecies.c \
-    src/ecies/kdf.c \
+    src/ecies/secure.cpp \
+    src/ecies/ecies.cpp \
     src/ntp.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
