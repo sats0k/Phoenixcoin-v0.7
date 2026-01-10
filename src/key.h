@@ -29,10 +29,6 @@
 #include <string>
 #include <vector>
 
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-#include <openssl/ec.h> // for EC_KEY definition
-#endif
-
 #include "allocators.h"
 #include "ecies/ecies.h"
 #include "serialize.h"
@@ -112,7 +108,7 @@ class CPubKey {
     uint256 GetHash() const { return Hash(vchPubKey.begin(), vchPubKey.end()); }
 
     bool IsValid() const {
-        return((vchPubKey.size() == 33) || (vchPubKey.size() == 65));
+        return vchPubKey.size() == 33 || vchPubKey.size() == 65;
     }
 
     bool IsCompressed() const { return vchPubKey.size() == 33; }

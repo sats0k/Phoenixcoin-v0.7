@@ -161,11 +161,11 @@ obj/neoscrypt.o: neoscrypt.c
 obj/neoscrypt_asm.o: neoscrypt_asm.S
 	$(CC) -c -DNEOSCRYPT_SHA256 -DNEOSCRYPT_ASM -DNEOSCRYPT_OPT -o $@ $^
 
-obj/secure.o: ecies/secure.c
-	$(CC) $(CFLAGS) $(addprefix -I,$(CURDIR)/ecies $(DEPSDIR)/include $(OPENSSL_INCLUDE_PATH)) -c -o $@ $^
+obj/ecies.o: ecies/ecies.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
-obj/kdf.o: ecies/kdf.c
-	$(CC) $(CFLAGS) $(addprefix -I,$(CURDIR)/ecies $(DEPSDIR)/include $(OPENSSL_INCLUDE_PATH)) -c -o $@ $^
+obj/secure.o: ecies/secure.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 phoenixcoind: $(OBJS:obj/%=obj/%)
 	$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)

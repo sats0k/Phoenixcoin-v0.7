@@ -328,7 +328,7 @@ bool CKey::SignCompact(const uint256& hash,
     vchSig[0] = 27 + recid + (fCompressedPubKey ? 4 : 0);
     std::memcpy(&vchSig[1], sig64, 64);
 
-    return(true);
+    return true;
 }
 
 /* ---------- Verification ---------- */
