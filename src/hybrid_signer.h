@@ -21,7 +21,7 @@
 
 enum class SigAlg : uint8_t {
     ECDSA_SECP256K1 = 0x01,
-    DILITHIUM = 0x02,
+    ML_DSA_65 = 0x02,
 };
 
 struct Signature {

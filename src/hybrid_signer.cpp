@@ -33,7 +33,7 @@ DilithiumSigner::~DilithiumSigner() {
     }
 }
 
-SigAlg DilithiumSigner::Algorithm() const { return SigAlg::DILITHIUM; }
+SigAlg DilithiumSigner::Algorithm() const { return SigAlg::ML_DSA_65; }
 
 bool DilithiumSigner::Sign(const uint256& h, std::vector<uint8_t>& s) const {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
@@ -190,7 +190,7 @@ std::vector<uint8_t> SerializeMLDSAKey(EVP_PKEY* pkey) {
     out.reserve(1 + 2 + pub.size() + 2 + priv.size());
 
     // Algorithm identifier
-    out.push_back(static_cast<uint8_t>(SigAlg::DILITHIUM));
+    out.push_back(static_cast<uint8_t>(SigAlg::ML_DSA_65));
 
     // Helper lambda to push uint16_t in big-endian
     auto push16 = [&](uint16_t v) {
@@ -215,7 +215,7 @@ EVP_PKEY* DeserializeMLDSAKey(const std::vector<uint8_t>& in) {
 
     size_t off = 0;
     uint8_t alg = in[off++];
-    if (alg != static_cast<uint8_t>(SigAlg::DILITHIUM)) return nullptr;
+    if (alg != static_cast<uint8_t>(SigAlg::ML_DSA_65)) return nullptr;
 
     auto read16 = [&](uint16_t& v) {
         if (off + 2 > in.size()) return false;
@@ -266,7 +266,7 @@ std::vector<uint8_t> DilithiumSigner::SerializePrivateKey() const {
     out.reserve(1 + 2 + pub.size() + 2 + priv.size());
 
     // Algorithm identifier
-    out.push_back(static_cast<uint8_t>(SigAlg::DILITHIUM));
+    out.push_back(static_cast<uint8_t>(SigAlg::ML_DSA_65));
 
     auto push16 = [&](uint16_t v) {
         out.push_back(v >> 8);
@@ -293,7 +293,7 @@ std::unique_ptr<DilithiumSigner> DilithiumSigner::FromSerialized(
     if (in.size() < 5) return nullptr;
 
     size_t off = 0;
-    if (in[off++] != static_cast<uint8_t>(SigAlg::DILITHIUM)) return nullptr;
+    if (in[off++] != static_cast<uint8_t>(SigAlg::ML_DSA_65)) return nullptr;
 
     auto read16 = [&](uint16_t& v) {
         if (off + 2 > in.size()) return false;
