@@ -126,7 +126,7 @@ void PerformCryptography() {
 
     // Generate Dilithium key
     EVP_PKEY_CTX* kctx =
-        EVP_PKEY_CTX_new_from_name(nullptr, "Dilithium3", nullptr);
+        EVP_PKEY_CTX_new_from_name(nullptr, "p384_mldsa65", nullptr);
     if (!kctx) return;
 
     EVP_PKEY* pkey = nullptr;
@@ -158,4 +158,204 @@ void PerformCryptography() {
     if (!hs.VerifyAll(hash, sigs)) return;
 
     // Cleanup is handled by destructors
+}
+
+/* ---------- Serialization, Deserialization ---------- */
+
+// Extracts raw public and private keys from an EVP_PKEY object
+static bool GetRawKey(EVP_PKEY* pkey, std::vector<uint8_t>& pub,
+                      std::vector<uint8_t>& priv) {
+    size_t len = 0;
+
+    // Get raw public key
+    if (EVP_PKEY_get_raw_public_key(pkey, nullptr, &len) <= 0) return false;
+    pub.resize(len);
+    if (EVP_PKEY_get_raw_public_key(pkey, pub.data(), &len) <= 0) return false;
+
+    // Get raw private key
+    if (EVP_PKEY_get_raw_private_key(pkey, nullptr, &len) <= 0) return false;
+    priv.resize(len);
+    if (EVP_PKEY_get_raw_private_key(pkey, priv.data(), &len) <= 0)
+        return false;
+
+    return true;
+}
+
+// Serialize a MLDSA key into a custom format
+std::vector<uint8_t> SerializeMLDSAKey(EVP_PKEY* pkey) {
+    std::vector<uint8_t> pub, priv;
+    if (!GetRawKey(pkey, pub, priv)) return {};
+
+    std::vector<uint8_t> out;
+    out.reserve(1 + 2 + pub.size() + 2 + priv.size());
+
+    // Algorithm identifier
+    out.push_back(static_cast<uint8_t>(SigAlg::DILITHIUM));
+
+    // Helper lambda to push uint16_t in big-endian
+    auto push16 = [&](uint16_t v) {
+        out.push_back(v >> 8);
+        out.push_back(v & 0xff);
+    };
+
+    // Append public key
+    push16(pub.size());
+    out.insert(out.end(), pub.begin(), pub.end());
+
+    // Append private key
+    push16(priv.size());
+    out.insert(out.end(), priv.begin(), priv.end());
+
+    return out;
+}
+
+// Deserialize the custom format to reconstruct EVP_PKEY
+EVP_PKEY* DeserializeMLDSAKey(const std::vector<uint8_t>& in) {
+    if (in.size() < 5) return nullptr;
+
+    size_t off = 0;
+    uint8_t alg = in[off++];
+    if (alg != static_cast<uint8_t>(SigAlg::DILITHIUM)) return nullptr;
+
+    auto read16 = [&](uint16_t& v) {
+        if (off + 2 > in.size()) return false;
+        v = (in[off] << 8) | in[off + 1];
+        off += 2;
+        return true;
+    };
+
+    uint16_t pub_len, priv_len;
+
+    // Read public key length
+    if (!read16(pub_len)) return nullptr;
+    if (off + pub_len > in.size()) return nullptr;
+    const uint8_t* pub = &in[off];
+    off += pub_len;
+
+    // Read private key length
+    if (!read16(priv_len)) return nullptr;
+    if (off + priv_len > in.size()) return nullptr;
+    const uint8_t* priv = &in[off];
+
+    // Create EVP_PKEY from raw private key
+    EVP_PKEY* pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ML_DSA_65, nullptr,
+                                                  priv, priv_len);
+    if (!pkey) return nullptr;
+
+    // Verify the public key matches
+    size_t len = 0;
+    EVP_PKEY_get_raw_public_key(pkey, nullptr, &len);
+    std::vector<uint8_t> check(len);
+    EVP_PKEY_get_raw_public_key(pkey, check.data(), &len);
+
+    if (check.size() != pub_len ||
+        CRYPTO_memcmp(check.data(), pub, pub_len) != 0) {
+        EVP_PKEY_free(pkey);
+        return nullptr;
+    }
+
+    return pkey;
+}
+
+// Serialize a Dilithium signer private key
+std::vector<uint8_t> DilithiumSigner::SerializePrivateKey() const {
+    std::vector<uint8_t> pub, priv;
+    if (!GetRawKey(pkey, pub, priv)) return {};
+
+    std::vector<uint8_t> out;
+    out.reserve(1 + 2 + pub.size() + 2 + priv.size());
+
+    // Algorithm identifier
+    out.push_back(static_cast<uint8_t>(SigAlg::DILITHIUM));
+
+    auto push16 = [&](uint16_t v) {
+        out.push_back(v >> 8);
+        out.push_back(v & 0xff);
+    };
+
+    // Append public key
+    push16(pub.size());
+    out.insert(out.end(), pub.begin(), pub.end());
+
+    // Append private key
+    push16(priv.size());
+    out.insert(out.end(), priv.begin(), priv.end());
+
+    // Cleanse private key data
+    OPENSSL_cleanse(priv.data(), priv.size());
+
+    return out;
+}
+
+// Deserialize data into a DilithiumSigner object
+std::unique_ptr<DilithiumSigner> DilithiumSigner::FromSerialized(
+    const std::vector<uint8_t>& in) {
+    if (in.size() < 5) return nullptr;
+
+    size_t off = 0;
+    if (in[off++] != static_cast<uint8_t>(SigAlg::DILITHIUM)) return nullptr;
+
+    auto read16 = [&](uint16_t& v) {
+        if (off + 2 > in.size()) return false;
+        v = (in[off] << 8) | in[off + 1];
+        off += 2;
+        return true;
+    };
+
+    uint16_t pub_len, priv_len;
+
+    // Read public key length
+    if (!read16(pub_len) || off + pub_len > in.size()) return nullptr;
+    const uint8_t* pub = &in[off];
+    off += pub_len;
+
+    // Read private key length
+    if (!read16(priv_len) || off + priv_len > in.size()) return nullptr;
+    const uint8_t* priv = &in[off];
+
+    // Create EVP_PKEY from raw private key
+    EVP_PKEY* pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ML_DSA_65, nullptr,
+                                                  priv, priv_len);
+    if (!pkey) return nullptr;
+
+    // Verify public key matches
+    size_t len = 0;
+    EVP_PKEY_get_raw_public_key(pkey, nullptr, &len);
+    if (len != pub_len) {
+        EVP_PKEY_free(pkey);
+        return nullptr;
+    }
+
+    std::vector<uint8_t> check(len);
+    EVP_PKEY_get_raw_public_key(pkey, check.data(), &len);
+
+    if (CRYPTO_memcmp(check.data(), pub, pub_len) != 0) {
+        EVP_PKEY_free(pkey);
+        return nullptr;
+    }
+
+    return std::make_unique<DilithiumSigner>(pkey);
+}
+
+// Serialize multiple private keys from signers
+std::vector<std::vector<uint8_t>> HybridSigner::SerializePrivateKeys() const {
+    std::vector<std::vector<uint8_t>> out;
+    for (const auto& s : signers) {
+        out.push_back(s->SerializePrivateKey());
+    }
+    return out;
+}
+
+// Load a hybrid signer with a secp256k1 signer and multiple Dilithium signers
+HybridSigner LoadHybridSigner(const CKey& secpKey,
+                              const std::vector<std::vector<uint8_t>>& keys) {
+    HybridSigner hs;
+    hs.Add(std::make_unique<Secp256k1Signer>(secpKey));
+
+    for (const auto& k : keys) {
+        auto d = DilithiumSigner::FromSerialized(k);
+        if (d) hs.Add(std::move(d));
+    }
+
+    return hs;
 }
