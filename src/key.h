@@ -6,31 +6,7 @@
 #ifndef KEY_H
 #define KEY_H
 
-#include <openssl/bn.h>
-#include <openssl/core_names.h>
-#include <openssl/crypto.h>
-#include <openssl/ec.h>
-#include <openssl/ecdsa.h>
-#include <openssl/err.h>
-#include <openssl/evp.h>
-#include <openssl/kdf.h>
-#include <openssl/objects.h>
-#include <openssl/opensslv.h>
-#include <openssl/params.h>
-#include <openssl/provider.h>
-#include <openssl/rand.h>
-#include <secp256k1.h>
-#include <secp256k1_recovery.h>
-
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <vector>
-
 #include "allocators.h"
-#include "ecies/ecies.h"
 #include "serialize.h"
 #include "util.h"
 
@@ -144,7 +120,15 @@ class CKey {
    public:
     EVP_PKEY *GetEVPPrivKey() const;
     CKey() : pkey(nullptr), fSet(false), fCompressedPubKey(false) {}
-    ~CKey() { Reset(); }
+    ~CKey() {
+        if (!vchSecret.empty()) {
+            OPENSSL_cleanse(vchSecret.data(), vchSecret.size());
+        }
+        if (pkey) {
+            EVP_PKEY_free(pkey);
+            pkey = nullptr;
+        }
+    }
 
     void Reset() {
         if (pkey) EVP_PKEY_free(pkey);

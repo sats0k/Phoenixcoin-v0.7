@@ -3,12 +3,39 @@
 // Distributed under the MIT/X11 software licence, see the accompanying
 // file LICENCE or http://opensource.org/license/mit
 
+// Project
 #include "key.h"
+#include "ecies/ecies.h"
+
+// C / C++
+#include <vector>
+#include <cstring>
+#include <cstdio>
+#include <stdexcept>
+
+// OpenSSL (core + 3.x APIs)
+#include <openssl/evp.h>
+#include <openssl/ec.h>
+#include <openssl/sha.h>
+#include <openssl/rand.h>
+#include <openssl/err.h>
+#include <openssl/kdf.h>
+#include <openssl/core_names.h>
+#include <openssl/provider.h>
+#include <openssl/bn.h>
+#include <openssl/crypto.h>
+
+// libsecp256k1
+#include <secp256k1.h>
+#include <secp256k1_recovery.h>
 
 /* ----------  Global secp256k1 context ---------- */
-static secp256k1_context* g_secp256k1_ctx = [] {
-    return secp256k1_context_create(SECP256K1_CONTEXT_SIGN |
-                                    SECP256K1_CONTEXT_VERIFY);
+static secp256k1_context* g_secp256k1_verify_ctx = [] {
+    return secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+}();
+
+static thread_local secp256k1_context* g_secp256k1_sign_ctx = [] {
+    return secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
 }();
 
 /* ---------- Forward declarations ---------- */
@@ -17,7 +44,7 @@ static CPubKey SerializePubKey(const secp256k1_pubkey& pub) {
     unsigned char out[33];
     size_t len = 33;
 
-    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pub,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_sign_ctx, out, &len, &pub,
                                   SECP256K1_EC_COMPRESSED);
 
     return CPubKey(std::vector<unsigned char>(out, out + len));
@@ -27,11 +54,11 @@ static CPubKey SerializePubKey(const secp256k1_pubkey& pub) {
 static bool DecompressPubKey(const unsigned char* comp, unsigned char out[65]) {
     secp256k1_pubkey pub;
 
-    if (!secp256k1_ec_pubkey_parse(g_secp256k1_ctx, &pub, comp, 33))
+    if (!secp256k1_ec_pubkey_parse(g_secp256k1_verify_ctx, &pub, comp, 33))
         return false;
 
     size_t len = 65;
-    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, out, &len, &pub,
+    secp256k1_ec_pubkey_serialize(g_secp256k1_verify_ctx, out, &len, &pub,
                                   SECP256K1_EC_UNCOMPRESSED);
 
     return true;
@@ -120,10 +147,10 @@ CPubKey RecoverPubKey(const uint256& hash, const unsigned char sig64[64],
     secp256k1_pubkey pub;
 
     if (!secp256k1_ecdsa_recoverable_signature_parse_compact(
-            g_secp256k1_ctx, &rsig, sig64, recid))
+            g_secp256k1_verify_ctx, &rsig, sig64, recid))
         return CPubKey();
 
-    if (!secp256k1_ecdsa_recover(g_secp256k1_ctx, &pub, &rsig,
+    if (!secp256k1_ecdsa_recover(g_secp256k1_verify_ctx, &pub, &rsig,
                                  reinterpret_cast<const unsigned char*>(&hash)))
         return CPubKey();
 
@@ -144,10 +171,10 @@ void CKey::MakeNewKey(bool fCompressed) {
     do {
         if (RAND_bytes(secret.data(), 32) != 1)
             throw key_error("RAND_bytes failed");
-    } while (!secp256k1_ec_seckey_verify(g_secp256k1_ctx, secret.data()));
+    } while (!secp256k1_ec_seckey_verify(g_secp256k1_sign_ctx, secret.data()));
 
     secp256k1_pubkey pub;
-    if (!secp256k1_ec_pubkey_create(g_secp256k1_ctx, &pub, secret.data()))
+    if (!secp256k1_ec_pubkey_create(g_secp256k1_sign_ctx, &pub, secret.data()))
         throw key_error("Failed to create public key");
 
     CPubKey pubkey = SerializePubKey(pub);
@@ -193,7 +220,8 @@ bool CKey::SetPrivKey(const CPrivKey& vchPrivKey) {
     BN_clear_free(bn);
 
     secp256k1_pubkey pub;
-    if (!secp256k1_ec_pubkey_create(g_secp256k1_ctx, &pub, secret.data())) {
+    if (!secp256k1_ec_pubkey_create(g_secp256k1_sign_ctx, &pub,
+                                    secret.data())) {
         EVP_PKEY_free(tmp);
         return false;
     }
@@ -211,11 +239,11 @@ bool CKey::SetSecret(const CSecret& secret, bool fCompressed) {
     Reset();
 
     if (secret.size() != 32) return false;
-    if (!secp256k1_ec_seckey_verify(g_secp256k1_ctx, secret.data()))
+    if (!secp256k1_ec_seckey_verify(g_secp256k1_sign_ctx, secret.data()))
         return false;
 
     secp256k1_pubkey pub;
-    if (!secp256k1_ec_pubkey_create(g_secp256k1_ctx, &pub, secret.data()))
+    if (!secp256k1_ec_pubkey_create(g_secp256k1_sign_ctx, &pub, secret.data()))
         return false;
 
     CPubKey pubkey = SerializePubKey(pub);
@@ -296,17 +324,18 @@ bool CKey::Sign(uint256 hash, std::vector<unsigned char>& sig) const {
     if (!fSet) return false;
 
     secp256k1_ecdsa_signature signature;
-    if (!secp256k1_ecdsa_sign(g_secp256k1_ctx, &signature, hash.begin(),
+    if (!secp256k1_ecdsa_sign(g_secp256k1_sign_ctx, &signature, hash.begin(),
                               vchSecret.data(), nullptr, nullptr))
         return false;
 
     secp256k1_ecdsa_signature sig_norm;
-    secp256k1_ecdsa_signature_normalize(g_secp256k1_ctx, &sig_norm, &signature);
+    secp256k1_ecdsa_signature_normalize(g_secp256k1_sign_ctx, &sig_norm,
+                                        &signature);
     signature = sig_norm;
 
     unsigned char der[72];
     size_t derlen = sizeof(der);
-    secp256k1_ecdsa_signature_serialize_der(g_secp256k1_ctx, der, &derlen,
+    secp256k1_ecdsa_signature_serialize_der(g_secp256k1_sign_ctx, der, &derlen,
                                             &signature);
     sig.assign(der, der + derlen);
     return true;
@@ -324,7 +353,7 @@ bool CKey::SignCompact(const uint256& hash,
     secp256k1_ecdsa_recoverable_signature sig;
 
     int signResult = secp256k1_ecdsa_sign_recoverable(
-        g_secp256k1_ctx, &sig, hashData, privkey,
+        g_secp256k1_sign_ctx, &sig, hashData, privkey,
         secp256k1_nonce_function_rfc6979, nullptr);
 
     if (signResult != 1) {
@@ -336,7 +365,7 @@ bool CKey::SignCompact(const uint256& hash,
     unsigned char sig64[64];
 
     secp256k1_ecdsa_recoverable_signature_serialize_compact(
-        g_secp256k1_ctx, sig64, &recid, &sig);
+        g_secp256k1_sign_ctx, sig64, &recid, &sig);
 
     vchSig[0] = 27 + recid + (fCompressedPubKey ? 4 : 0);
     std::memcpy(&vchSig[1], sig64, 64);
@@ -357,20 +386,22 @@ bool CKey::SetCompactSignature(const uint256& hash,
 
     secp256k1_ecdsa_recoverable_signature sig;
     if (!secp256k1_ecdsa_recoverable_signature_parse_compact(
-            g_secp256k1_ctx, &sig, &vchSig[1], recid))
+            g_secp256k1_verify_ctx, &sig, &vchSig[1], recid))
         return false;
 
     unsigned char hashData[32];
     std::memcpy(hashData, hash.begin(), 32);
 
     secp256k1_pubkey pubkey;
-    if (!secp256k1_ecdsa_recover(g_secp256k1_ctx, &pubkey, &sig, hashData))
+    if (!secp256k1_ecdsa_recover(g_secp256k1_verify_ctx, &pubkey, &sig,
+                                 hashData))
         return false;
 
     unsigned char pubkey_out[33];
     size_t pubkey_out_len = 33;
-    secp256k1_ec_pubkey_serialize(g_secp256k1_ctx, pubkey_out, &pubkey_out_len,
-                                  &pubkey, SECP256K1_EC_COMPRESSED);
+    secp256k1_ec_pubkey_serialize(g_secp256k1_verify_ctx, pubkey_out,
+                                  &pubkey_out_len, &pubkey,
+                                  SECP256K1_EC_COMPRESSED);
     std::vector<unsigned char> vchPubKey(pubkey_out,
                                          pubkey_out + pubkey_out_len);
     SetPubKey(CPubKey(vchPubKey));
@@ -383,20 +414,22 @@ bool CKey::SetCompactSignature(const uint256& hash,
 bool CKey::Verify(uint256 hash, const std::vector<unsigned char>& sig) const {
     secp256k1_pubkey pub;
     std::vector<unsigned char> pk = vchPubKey.Raw();
-    if (!secp256k1_ec_pubkey_parse(g_secp256k1_ctx, &pub, pk.data(), pk.size()))
+    if (!secp256k1_ec_pubkey_parse(g_secp256k1_verify_ctx, &pub, pk.data(),
+                                   pk.size()))
         return false;
 
     secp256k1_ecdsa_signature signature;
-    if (!secp256k1_ecdsa_signature_parse_der(g_secp256k1_ctx, &signature,
+    if (!secp256k1_ecdsa_signature_parse_der(g_secp256k1_verify_ctx, &signature,
                                              sig.data(), sig.size()))
         return false;
 
     secp256k1_ecdsa_signature sig_norm;
-    secp256k1_ecdsa_signature_normalize(g_secp256k1_ctx, &sig_norm, &signature);
+    secp256k1_ecdsa_signature_normalize(g_secp256k1_verify_ctx, &sig_norm,
+                                        &signature);
     signature = sig_norm;
 
-    return secp256k1_ecdsa_verify(g_secp256k1_ctx, &signature, hash.begin(),
-                                  &pub);
+    return secp256k1_ecdsa_verify(g_secp256k1_verify_ctx, &signature,
+                                  hash.begin(), &pub);
 }
 
 bool CKey::VerifyCompact(const uint256& hash,
@@ -404,7 +437,10 @@ bool CKey::VerifyCompact(const uint256& hash,
     CKey recovered;
     if (!recovered.SetCompactSignature(hash, vchSig)) return false;
 
-    return recovered.GetPubKey() == GetPubKey();
+    const auto& a = recovered.GetPubKey().Raw();
+    const auto& b = GetPubKey().Raw();
+    return a.size() == b.size() &&
+           CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
 bool CKey::IsValid() const {
@@ -463,11 +499,16 @@ static bool ECDH_Derive(EVP_PKEY* privkey, EVP_PKEY* pubkey,
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(privkey, nullptr);
     if (!ctx) return false;
 
-    size_t outlen = 32;
+    unsigned char raw[64];
+    size_t rawlen = sizeof(raw);
 
     bool ok = EVP_PKEY_derive_init(ctx) == 1 &&
               EVP_PKEY_derive_set_peer(ctx, pubkey) == 1 &&
-              EVP_PKEY_derive(ctx, out, &outlen) == 1 && outlen == 32;
+              EVP_PKEY_derive(ctx, raw, &rawlen) == 1;
+
+    if (ok) {
+        SHA256(raw, rawlen, out);
+    }
 
     EVP_PKEY_CTX_free(ctx);
     return ok;
@@ -485,9 +526,9 @@ static bool HKDF_SHA256(const unsigned char* secret, size_t secret_len,
     EVP_PKEY_CTX_set1_hkdf_salt(ctx, nullptr, 0);
 
     if (EVP_PKEY_CTX_set1_hkdf_key(ctx, secret, secret_len) != 1) goto err;
-    if (EVP_PKEY_CTX_add1_hkdf_info(ctx, (const unsigned char*)"ecdh-aead",
-                                    9) != 1)
-        goto err;
+    static const unsigned char info[] = "secp256k1-ecies-aes256gcm-v1";
+
+    if (EVP_PKEY_CTX_add1_hkdf_info(ctx, info, sizeof(info) - 1) != 1) goto err;
 
     if (EVP_PKEY_derive(ctx, out, &out_len) != 1) goto err;
 
@@ -546,7 +587,9 @@ void CPubKey::EncryptData(const std::vector<unsigned char>& plaintext,
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_LEN, nullptr);
     EVP_EncryptInit_ex(ctx, nullptr, nullptr, aead_key, nonce);
 
-    // Authenticate ephemeral pubkey
+    static const unsigned char aad[] = "AES-256-GCM|secp256k1|HKDF-SHA256|v1";
+
+    EVP_EncryptUpdate(ctx, nullptr, &len, aad, sizeof(aad) - 1);
     EVP_EncryptUpdate(ctx, nullptr, &len, eph_raw.data(), eph_raw.size());
 
     EVP_EncryptUpdate(ctx, ciphertext.data(), &len, plaintext.data(),
@@ -623,7 +666,9 @@ void CKey::DecryptData(const std::vector<unsigned char>& enc,
     EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, NONCE_LEN, nullptr);
     EVP_DecryptInit_ex(ctx, nullptr, nullptr, aead_key, nonce);
 
-    // Authenticate ephemeral pubkey
+    static const unsigned char aad[] = "AES-256-GCM|secp256k1|HKDF-SHA256|v1";
+
+    EVP_DecryptUpdate(ctx, nullptr, &len, aad, sizeof(aad) - 1);
     EVP_DecryptUpdate(ctx, nullptr, &len, enc.data(), PUBKEY_LEN);
 
     EVP_DecryptUpdate(ctx, out.data(), &len, ciphertext, ct_len);
