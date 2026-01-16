@@ -230,7 +230,7 @@ HEADERS += src/qt/gui.h \
     src/neoscrypt.h \
     src/ecies/ecies.h \
     src/ntp.h \
-    src/hybrid_signer.h \
+    src/hs/hybrid_signer.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
 
@@ -303,7 +303,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/ecies/secure.cpp \
     src/ecies/ecies.cpp \
     src/ntp.cpp \
-    src/hybrid_signer.cpp \
+    src/hs/hybrid_signer.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
 

@@ -170,6 +170,9 @@ obj/ecies.o: ecies/ecies.cpp
 obj/secure.o: ecies/secure.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
+obj/hybrid_signer.o: hs/hybrid_signer.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
 # Paths to PQClean Kyber implementation
 PQC_BASE_PATH = PQClean
 PQC_INCLUDE_PATH = $(PQC_BASE_PATH)/crypto_kem/kyber1024/clean
