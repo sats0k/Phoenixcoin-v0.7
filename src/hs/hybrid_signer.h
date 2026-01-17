@@ -2,22 +2,49 @@
 // Distributed under the MIT/X11 software licence, see the accompanying
 // file LICENCE or http://opensource.org/license/mit
 
+#ifndef HYBRID_SIGNER_H
+#define HYBRID_SIGNER_H
+
 #pragma once
 
-#include <openssl/evp.h>
-#include <openssl/opensslv.h>
-
 #include <cstdint>
-#include <iostream>
-#include <memory>
+#include <cstddef>
 #include <vector>
+#include <memory>
+
+#include <openssl/opensslv.h>
+#include <openssl/evp.h>
 
 #include "key.h"
-#include "uint256.h"
 
-#if OPENSSL_VERSION_NUMBER < 0x30500000L
-#error "This Hybrid implementation requires OpenSSL 3.5+"
+#include <openssl/opensslv.h>
+
+/* ------------------------------------------------------------------------- */
+/* Serialization format constants                                            */
+/* ------------------------------------------------------------------------- */
+
+static constexpr uint8_t HYBRID_MAGIC[4] = { 'H','Y','B','K' };
+
+static constexpr uint8_t HYBRID_VERSION       = 2;
+static constexpr uint8_t HYBRID_VERSION_ENC   = 3;
+
+/* Encrypted key serialization parameters (v3) */
+static constexpr size_t ENC_SALT_LEN  = 16;
+static constexpr size_t ENC_NONCE_LEN = 12;
+static constexpr size_t ENC_TAG_LEN   = 16;
+
+/* ------------------------------------------------------------------------- */
+/*  Requirements                                                             */
+/* ------------------------------------------------------------------------- */
+
+// ML-DSA support landed in OpenSSL 3.2
+#if OPENSSL_VERSION_NUMBER < 0x30200000L
+#error "Hybrid signatures require OpenSSL 3.2+ (ML-DSA support)"
 #endif
+
+/* ------------------------------------------------------------------------- */
+/*  Signature Types                                                          */
+/* ------------------------------------------------------------------------- */
 
 enum class SigAlg : uint8_t {
     ECDSA_SECP256K1 = 0x01,
@@ -26,57 +53,139 @@ enum class SigAlg : uint8_t {
 
 struct Signature {
     SigAlg alg;
-    std::vector<uint8_t> sig;
+    std::vector<uint8_t> bytes;
 };
 
+/* ------------------------------------------------------------------------- */
+/*  Abstract Signer Interface                                                */
+/* ------------------------------------------------------------------------- */
+
+// A signer signs and verifies EXACT bytes.
+// Hashing, domain separation, etc. are handled internally.
 class ISigner {
-   public:
+public:
     virtual ~ISigner() = default;
+
     virtual SigAlg Algorithm() const = 0;
-    virtual bool Sign(const uint256& h, std::vector<uint8_t>& sig) const = 0;
-    virtual bool Verify(const uint256& h,
+
+    virtual bool Sign(const std::vector<uint8_t>& msg,
+                      std::vector<uint8_t>& sig) const = 0;
+
+    virtual bool Verify(const std::vector<uint8_t>& msg,
                         const std::vector<uint8_t>& sig) const = 0;
+
     virtual std::vector<uint8_t> GetPublicKey() const = 0;
 
-    // NEW (optional)
-    virtual std::vector<uint8_t> SerializePrivateKey() const { return {}; }
+    // Optional: only implemented by PQ signers
+    virtual std::vector<uint8_t> SerializePrivateKey() const {
+        return {};
+    }
+
+    /* Encrypted private-key serialization (recommended) */
+    virtual std::vector<uint8_t>
+    SerializePrivateKeyEncrypted(
+        const std::vector<uint8_t>& password) const {
+        return {};
+    }
 };
 
+/* ------------------------------------------------------------------------- */
+/*  secp256k1 (Bitcoin) Signer                                               */
+/* ------------------------------------------------------------------------- */
+
+// Uses Bitcoin Core's CKey internally.
+// Signs HASH256(msg) using ECDSA/secp256k1.
 class Secp256k1Signer final : public ISigner {
-    CKey key;
+public:
+    explicit Secp256k1Signer(const CKey& key);
 
-   public:
-    explicit Secp256k1Signer(const CKey& k);
     SigAlg Algorithm() const override;
-    bool Sign(const uint256& h, std::vector<uint8_t>& s) const override;
-    bool Verify(const uint256& h, const std::vector<uint8_t>& s) const override;
+
+    bool Sign(const std::vector<uint8_t>& msg,
+              std::vector<uint8_t>& sig) const override;
+
+    bool Verify(const std::vector<uint8_t>& msg,
+                const std::vector<uint8_t>& sig) const override;
+
     std::vector<uint8_t> GetPublicKey() const override;
+
+private:
+    CKey key_;
 };
 
-class DilithiumSigner final : public ISigner {
-    EVP_PKEY* pkey;
+/* ------------------------------------------------------------------------- */
+/*  ML-DSA (Dilithium-65) Signer                                             */
+/* ------------------------------------------------------------------------- */
 
-   public:
-    explicit DilithiumSigner(EVP_PKEY* k);
+// Owns an EVP_PKEY (raw ML-DSA key).
+class DilithiumSigner final : public ISigner {
+public:
+    explicit DilithiumSigner(EVP_PKEY* key);
     ~DilithiumSigner() override;
 
+    DilithiumSigner(const DilithiumSigner&) = delete;
+    DilithiumSigner& operator=(const DilithiumSigner&) = delete;
+
     SigAlg Algorithm() const override;
-    bool Sign(const uint256& h, std::vector<uint8_t>& s) const override;
-    bool Verify(const uint256& h, const std::vector<uint8_t>& s) const override;
+
+    bool Sign(const std::vector<uint8_t>& msg,
+              std::vector<uint8_t>& sig) const override;
+
+    bool Verify(const std::vector<uint8_t>& msg,
+                const std::vector<uint8_t>& sig) const override;
+
     std::vector<uint8_t> GetPublicKey() const override;
 
     std::vector<uint8_t> SerializePrivateKey() const override;
 
-    static std::unique_ptr<DilithiumSigner> FromSerialized(
+    std::vector<uint8_t>
+    SerializePrivateKeyEncrypted(
+        const std::vector<uint8_t>& password) const override;
+
+    static std::unique_ptr<DilithiumSigner>
+    FromSerialized(const std::vector<uint8_t>& in);
+
+    static std::unique_ptr<DilithiumSigner>
+    FromSerializedV2(const std::vector<uint8_t>& in);
+
+    static std::unique_ptr<DilithiumSigner>
+    FromEncryptedSerialized(
+        const std::vector<uint8_t>& password,
         const std::vector<uint8_t>& in);
+
+private:
+    EVP_PKEY* pkey_;
 };
 
+/* ------------------------------------------------------------------------- */
+/*  Hybrid Signer                                                            */
+/* ------------------------------------------------------------------------- */
+
+// Coordinates multiple signers over the SAME message.
 class HybridSigner {
-    std::vector<std::unique_ptr<ISigner>> signers;
+public:
+    void Add(std::unique_ptr<ISigner> signer);
 
-   public:
-    void Add(std::unique_ptr<ISigner>);
-    bool SignAll(const uint256& h, std::vector<Signature>& s) const;
-    bool VerifyAll(const uint256& h, const std::vector<Signature>& s) const;
+    // Signs the same message with all signers
+    bool SignAll(const std::vector<uint8_t>& msg,
+                 std::vector<Signature>& sigs) const;
+
+    bool VerifyAll(const std::vector<uint8_t>& msg,
+                   const std::vector<Signature>& sigs) const;
+
     std::vector<std::vector<uint8_t>> SerializePrivateKeys() const;
+
+private:
+    std::vector<std::unique_ptr<ISigner>> signers_;
 };
+
+/* ------------------------------------------------------------------------- */
+/*  Hybrid Message Construction                                              */
+/* ------------------------------------------------------------------------- */
+
+// Canonical message builder for hybrid signatures.
+// MUST be used by callers before SignAll().
+std::vector<uint8_t>
+BuildHybridMessage(const std::vector<uint8_t>& tx_sighash_preimage);
+
+#endif  // HYBRID_SIGNER_H
