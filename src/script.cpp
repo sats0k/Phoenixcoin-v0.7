@@ -1330,6 +1330,8 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
     case TX_MULTISIG:
         scriptSigRet << OP_0; // workaround CHECKMULTISIG bug
         return (SignN(vSolutions, keystore, hash, nHashType, scriptSigRet));
+    case TX_MLDSA65_PUBKEY:
+        return false;
     }
     return(false);
 }
@@ -1348,6 +1350,8 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
         return vSolutions[0][0] + 1;
     case TX_SCRIPTHASH:
         return 1; // doesn't include args needed by the script
+    case TX_MLDSA65_PUBKEY:
+        return -1;
     }
     return -1;
 }
@@ -1443,6 +1447,9 @@ isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey) {
             break;
         }
 
+        case TX_MLDSA65_PUBKEY: {
+            return MINE_NO;
+        }
     }
 
     if(keystore.HaveWatchOnly(scriptPubKey))
@@ -1732,6 +1739,10 @@ static CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo,
         }
     case TX_MULTISIG:
         return CombineMultisig(scriptPubKey, txTo, nIn, vSolutions, sigs1, sigs2);
+    case TX_MLDSA65_PUBKEY:
+        if (sigs1.size() >= sigs2.size())
+            return PushAll(sigs1);
+        return PushAll(sigs2);
     }
     return CScript();
 }

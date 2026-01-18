@@ -25,7 +25,6 @@ public:
     friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
 };
 
-// Add this above the CTxDestination typedef
 struct CMLDSA65PubKey {
     std::vector<unsigned char> pubkey;
 
