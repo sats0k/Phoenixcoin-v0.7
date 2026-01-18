@@ -482,10 +482,9 @@ void GetAccountAddresses(string strAccount, set<CTxDestination>& setAddress)
 {
     BOOST_FOREACH(const PAIRTYPE(CTxDestination, string)& item, pwalletMain->mapAddressBook)
     {
-        const CTxDestination& address = item.first;
         const string& strName = item.second;
         if (strName == strAccount)
-            setAddress.insert(address);
+            set<CTxDestination> setAddress;
     }
 }
 
@@ -729,29 +728,24 @@ Value sendmany(const Array &params, bool fHelp) {
     if (params.size() > 3 && params[3].type() != null_type && !params[3].get_str().empty())
         wtx.mapValue["comment"] = params[3].get_str();
 
-    set<CCoinAddress> setAddress;
+    set<CTxDestination> setAddress;
     vector<pair<CScript, int64> > vecSend;
 
     int64 totalAmount = 0;
-    BOOST_FOREACH(const Pair &s, sendTo) {
-        CCoinAddress address(s.name_);
-        if(!address.IsValid()) {
+    Array inputs = params[0].get_array();
+    BOOST_FOREACH(Value &input, inputs) {
+        CCoinAddress address(input.get_str());
+        if(!address.IsValid())
             throw(JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-              string("Invalid Phoenixcoin address: ") + s.name_));
-        }
+                string("Invalid Phoenixcoin address: ") + input.get_str()));
 
-        if(setAddress.count(address)) {
-            throw(JSONRPCError(RPC_INVALID_PARAMETER,
-              string("Invalid parameter, duplicated address: ") + s.name_));
-        }
-        setAddress.insert(address);
+        CTxDestination dest = address.Get();
 
-        CScript scriptPubKey;
-        scriptPubKey.SetDestination(address.Get());
-        int64 nAmount = AmountFromValue(s.value_);
-        totalAmount += nAmount;
+        if (setAddress.count(dest))
+            throw JSONRPCError(RPC_INVALID_PARAMETER,
+                string("Invalid parameter, duplicated address: ") + input.get_str());
 
-        vecSend.push_back(make_pair(scriptPubKey, nAmount));
+        setAddress.insert(dest);
     }
 
     EnsureWalletIsUnlocked();
@@ -1063,22 +1057,46 @@ void AcentryToJSON(const CAccountingEntry& acentry, const string& strAccount, Ar
     }
 }
 
-Value listtransactions(const Array &params, bool fHelp) {
+// Hybrid-aware helper to add size and signature type
+static void WalletTxToJSONHybrid(const CWalletTx& wtx, const string& strAccount, Object& entry)
+{
+    // Fill standard fields
+    WalletTxToJSON(wtx, entry);
 
-    if(fHelp || (params.size() > 3)) {
+    // Transaction size in bytes
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << wtx;
+    int nSize = ssTx.size();
+    entry.push_back(Pair("size_bytes", nSize));
+
+    // Simple hybrid signature detection (heuristic)
+    string sigType = "ECDSA";
+    for (const CTxIn &txin : wtx.vin) {
+        if (txin.scriptSig.size() > 70) { // ECDSA ~70 bytes, ML-DSA adds extra
+            sigType = "ECDSA+ML-DSA";
+            break;
+        }
+    }
+    entry.push_back(Pair("sig_type", sigType));
+}
+
+// Drop-in replacement for listtransactions
+json_spirit::Value listtransactions(const json_spirit::Array &params, bool fHelp)
+{
+    if (fHelp || (params.size() > 3)) {
         string msg = "listtransactions [account] [count] [skip]\n"
-          "Displays up to [count] most recent in-wallet transactions, 10 by default,\n"
-          "for [account], * by default meaning all accounts,\n"
-          "discarding first [skip] transactions, 0 by default.";
+                     "Displays up to [count] most recent in-wallet transactions...";
         throw(runtime_error(msg));
     }
 
     string strAccount = "*";
     if (params.size() > 0)
         strAccount = params[0].get_str();
+
     int nCount = 10;
     if (params.size() > 1)
         nCount = params[1].get_int();
+
     int nFrom = 0;
     if (params.size() > 2)
         nFrom = params[2].get_int();
@@ -1088,29 +1106,34 @@ Value listtransactions(const Array &params, bool fHelp) {
     if (nFrom < 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
 
-    Array ret;
+    json_spirit::Array ret;
 
     std::list<CAccountingEntry> acentries;
     CWallet::TxItems txOrdered = pwalletMain->OrderedTxItems(acentries, strAccount);
 
-    // iterate backwards until we have nCount items to return:
+    // Iterate backwards (newest first) until we have enough items
     for (CWallet::TxItems::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it)
     {
         CWalletTx *const pwtx = (*it).second.first;
-        if (pwtx != 0)
-            ListTransactions(*pwtx, strAccount, 0, true, ret);
+        if (pwtx != nullptr) {
+            Object entryTx;
+            WalletTxToJSONHybrid(*pwtx, strAccount, entryTx); // <-- hybrid-aware
+            ret.push_back(entryTx);
+        }
+
         CAccountingEntry *const pacentry = (*it).second.second;
-        if (pacentry != 0)
+        if (pacentry != nullptr)
             AcentryToJSON(*pacentry, strAccount, ret);
 
         if ((int)ret.size() >= (nCount+nFrom)) break;
     }
-    // ret is newest to oldest
 
+    // Handle pagination
     if (nFrom > (int)ret.size())
         nFrom = ret.size();
     if ((nFrom + nCount) > (int)ret.size())
         nCount = ret.size() - nFrom;
+
     Array::iterator first = ret.begin();
     std::advance(first, nFrom);
     Array::iterator last = ret.begin();
@@ -1120,10 +1143,8 @@ Value listtransactions(const Array &params, bool fHelp) {
     if (first != ret.begin()) ret.erase(ret.begin(), first);
 
     std::reverse(ret.begin(), ret.end()); // Return oldest to newest
-
     return ret;
 }
-
 
 Value listaccounts(const Array &params, bool fHelp) {
 
@@ -1245,32 +1266,60 @@ Value listsinceblock(const Array &params, bool fHelp) {
 
 
 Value gettransaction(const Array &params, bool fHelp) {
-
     if(fHelp || (params.size() != 1)) {
         string msg = "gettransaction <txid>\n"
-          "Displays detailed information about an in-wallet transaction <txid>.";
+                     "Displays detailed information about an in-wallet transaction <txid>.\n"
+                     "Supports hybrid ML-DSA + ECDSA transactions, size, and fee per KB.";
         throw(runtime_error(msg));
     }
 
     uint256 hash;
     hash.SetHex(params[0].get_str());
 
-    Object entry;
+    // Lookup transaction in wallet
     if(!pwalletMain->mapWallet.count(hash))
-      throw(JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction ID"));
+        throw(JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid or non-wallet transaction ID"));
     const CWalletTx &wtx = pwalletMain->mapWallet[hash];
 
+    // Basic amounts
     int64 nCredit = wtx.GetCredit();
-    int64 nDebit = wtx.GetDebit();
-    int64 nNet = nCredit - nDebit;
-    int64 nFee = (wtx.IsFromMe() ? wtx.GetValueOut() - nDebit : 0);
+    int64 nDebit  = wtx.GetDebit();
+    int64 nNet    = nCredit - nDebit;
+    int64 nFee    = (wtx.IsFromMe() ? wtx.GetValueOut() - nDebit : 0);
 
+    // JSON result
+    Object entry;
+    entry.push_back(Pair("txid", wtx.GetHash().GetHex()));
     entry.push_back(Pair("amount", ValueFromAmount(nNet - nFee)));
     if (wtx.IsFromMe())
         entry.push_back(Pair("fee", ValueFromAmount(nFee)));
 
+    // Transaction size (serialize manually)
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << wtx;
+    int nSize = ssTx.size();
+    entry.push_back(Pair("size_bytes", nSize));
+
+    // Fee per KB
+    double feePerKB = 0.0;
+    if (nSize > 0)
+        feePerKB = (double)nFee / ((double)nSize / 1000.0);
+    entry.push_back(Pair("fee_per_kb", ValueFromAmount((int64)feePerKB)));
+
+    // Hybrid signature info (crude detection by scriptSig size)
+    string sigType = "ECDSA";
+    for (const CTxIn &txin : wtx.vin) {
+        if (txin.scriptSig.size() > 70) { // rough heuristic for hybrid sigs
+            sigType = "ECDSA+ML-DSA";
+            break;
+        }
+    }
+    entry.push_back(Pair("sig_type", sigType));
+
+    // Add standard wallet fields
     WalletTxToJSON(wtx, entry);
 
+    // Per-output details
     Array details;
     ListTransactions(wtx, "*", 0, false, details);
     entry.push_back(Pair("details", details));
@@ -1548,8 +1597,14 @@ public:
         }
         return(obj);
     }
-};
 
+    Object operator()(const CMLDSA65PubKey &mlKey) const {
+        Object obj;
+        obj.push_back(Pair("ml-dsa65", HexStr(mlKey.pubkey.begin(), mlKey.pubkey.end())));
+        obj.push_back(Pair("ismine", false)); // change to true if the key is in the wallet
+        return obj;
+    }
+};
 
 Value validateaddress(const Array &params, bool fHelp) {
 

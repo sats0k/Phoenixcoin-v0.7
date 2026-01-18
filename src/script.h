@@ -41,6 +41,7 @@ enum txnouttype
     TX_PUBKEYHASH,
     TX_SCRIPTHASH,
     TX_MULTISIG,
+    TX_MLDSA65_PUBKEY
 };
 
 const char* GetTxnOutputType(txnouttype t);

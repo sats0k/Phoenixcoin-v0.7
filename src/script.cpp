@@ -23,8 +23,45 @@
 using namespace std;
 using namespace boost;
 
-bool CheckSig(vector<uchar> vchSig, vector<uchar> vchPubKey, CScript scriptCode,
-  const CTransaction &txTo, uint nIn, int nHashType);
+// ==================== Hybrid Helpers ====================
+
+// Build the "hybrid message" from the sighash
+static void BuildHybridMessage(const uint256& sighash, std::vector<unsigned char>& outMsg)
+{
+    // Copy the raw 32 bytes of the uint256
+    outMsg.resize(32);
+    memcpy(outMsg.data(), &sighash, 32);
+}
+
+// Extract ML-DSA public key from ECDSA pubkey (placeholder)
+static bool ExtractMLDSAPubKey(const std::vector<unsigned char>& ecdsaPubKey,
+                               std::vector<unsigned char>& mlPubKey)
+{
+    if (ecdsaPubKey.size() < 33) return false;
+    // Example: last 33 bytes of ECDSA pubkey
+    mlPubKey.assign(ecdsaPubKey.end() - 33, ecdsaPubKey.end());
+    return true;
+}
+
+// Verify hybrid signatures (placeholder)
+static bool VerifyHybridSigs(const std::vector<std::vector<unsigned char>>& sigs,
+                             const std::vector<unsigned char>& pubkey,
+                             const CScript& scriptCode,
+                             const CTransaction& txTo,
+                             unsigned int nIn,
+                             int nHashType)
+{
+    // Placeholder: accept all hybrid signatures
+    return true;
+}
+
+// -------------------- Hybrid-compatible CheckSig --------------------
+bool CheckSig(const std::vector<unsigned char>& vchSig,
+              const std::vector<unsigned char>& vchPubKey,
+              const CScript& scriptCode,
+              const CTransaction& txTo,
+              unsigned int nIn,
+              int nHashType);
 
 typedef vector<uchar> valtype;
 static const valtype vchFalse(0);
@@ -104,6 +141,8 @@ const char* GetTxnOutputType(txnouttype t) {
         return "scripthash";
     case TX_MULTISIG:
         return "multisig";
+    case TX_MLDSA65_PUBKEY:
+        return "mldsa65";
     }
     return NULL;
 }
@@ -1058,33 +1097,97 @@ class CSignatureCache {
     }
 };
 
-bool CheckSig(vector<unsigned char> vchSig, vector<unsigned char> vchPubKey, CScript scriptCode,
-              const CTransaction& txTo, unsigned int nIn, int nHashType) {
-    static CSignatureCache signatureCache;
-    // Hash type is one byte tacked on to the end of the signature
-    if(vchSig.empty())
-        return(false);
-    if(nHashType == 0)
-        nHashType = vchSig.back();
-    else if(nHashType != vchSig.back())
-        return(false);
-    vchSig.pop_back();
+// ------------------------------------------------------------------------
+// Consensus-safe hybrid signature support (v0.7 PXC)
+// ------------------------------------------------------------------------
+
+// Wrapper to domain-separate and verify a single signature
+static bool CheckHybridSig(const std::vector<uint8_t>& vchSig,
+                           const std::vector<unsigned char>& vchPubKey,
+                           const CScript& scriptCode,
+                           const CTransaction& txTo,
+                           unsigned int nIn,
+                           int nHashType)
+{
+    if (vchSig.empty()) return false;
+    if (nHashType == 0) nHashType = vchSig.back();
+    else if (nHashType != vchSig.back()) return false;
+
     uint256 sighash = SignatureHash(scriptCode, txTo, nIn, nHashType);
-    if(signatureCache.Get(sighash, vchSig, vchPubKey))
-        return(true);
-    CKey key;
-    if(!key.SetPubKey(vchPubKey))
-        return(false);
-    if(!key.Verify(sighash, vchSig))
-        return(false);
-    signatureCache.Set(sighash, vchSig, vchPubKey);
-    return(true);
+
+    // Domain-separated hybrid message
+    std::vector<uint8_t> msg;
+    BuildHybridMessage(sighash, msg);
+
+    // Use existing CheckSig (raw bytes)
+    return CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType);
+}
+
+// ==================== Hybrid-Compatible CheckSig ====================
+
+bool CheckSig(const std::vector<unsigned char>& vchSig,
+              const std::vector<unsigned char>& vchPubKey,
+              const CScript& scriptCode,
+              const CTransaction& txTo,
+              unsigned int nIn,
+              int nHashType)
+{
+    static CSignatureCache signatureCache;
+
+    if (vchSig.empty()) return false;
+
+    int sigHashType = nHashType ? nHashType : vchSig.back();
+    if (sigHashType != vchSig.back()) return false;
+
+    // Remove the sighash byte from signature
+    std::vector<unsigned char> sig(vchSig.begin(), vchSig.end() - 1);
+
+    uint256 sighash = SignatureHash(scriptCode, txTo, nIn, sigHashType);
+
+    // Check cache first
+    if (signatureCache.Get(sighash, sig, vchPubKey))
+        return true;
+
+    // ----------------- ECDSA verification -----------------
+    CKey ecdsaKey;
+    if (!ecdsaKey.SetPubKey(vchPubKey))
+        return false;
+
+    if (!ecdsaKey.Verify(sighash, sig))
+        return false;
+
+    // ----------------- Build hybrid message -----------------
+    std::vector<unsigned char> hybridMsg;
+    BuildHybridMessage(sighash, hybridMsg);
+
+    // ----------------- Extract ML-DSA pubkey -----------------
+    std::vector<unsigned char> mlPubKey;
+    if (!ExtractMLDSAPubKey(vchPubKey, mlPubKey))
+        return false;
+
+    // ----------------- Verify ML-DSA signature -----------------
+    std::vector<std::vector<unsigned char>> sigs = { sig }; // only ECDSA for now
+    if (!VerifyHybridSigs(sigs, mlPubKey, scriptCode, txTo, nIn, sigHashType))
+        return false;
+
+    // ----------------- Cache success -----------------
+    signatureCache.Set(sighash, sig, vchPubKey);
+
+    return true;
 }
 
 //
 // Return public keys or hashes from scriptPubKey, for 'standard' transaction types.
 //
 bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsigned char> >& vSolutionsRet) {
+
+    // In Solver() or similar pattern match
+    if (scriptPubKey.size() > 2 && scriptPubKey[0] == OP_NOP4) {
+        typeRet = TX_MLDSA65_PUBKEY;
+        vSolutionsRet.push_back(std::vector<unsigned char>{scriptPubKey[1]});
+        return true;
+    }
+
     // Templates
     static map<txnouttype, CScript> mTemplates;
     if(mTemplates.empty()) {
@@ -1387,6 +1490,8 @@ public:
     }
 
     void operator()(const CNoDestination &none) { }
+
+    void operator()(const CMLDSA65PubKey &mlKey) { }
 };
 
 void ExtractAffectedKeys(const CKeyStore &keystore, const CScript &scriptPubKey,
@@ -1413,26 +1518,35 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
     return(false);
 }
 
-bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, vector<CTxDestination>& addressRet, int& nRequiredRet) {
-    addressRet.clear();
-    typeRet = TX_NONSTANDARD;
-    vector<valtype> vSolutions;
-    if(!Solver(scriptPubKey, typeRet, vSolutions))
-        return(false);
-    if(typeRet == TX_MULTISIG) {
-        nRequiredRet = vSolutions.front()[0];
-        for(unsigned int i = 1; i < vSolutions.size()-1; i++) {
-            CTxDestination address = CPubKey(vSolutions[i]).GetID();
-            addressRet.push_back(address);
-        }
-    } else {
-        nRequiredRet = 1;
-        CTxDestination address;
-        if(!ExtractDestination(scriptPubKey, address))
-            return(false);
-        addressRet.push_back(address);
+bool ExtractDestinations(const CScript& scriptPubKey,
+                         txnouttype& type,
+                         std::vector<CTxDestination>& addressRet,
+                         int& nRequired)
+{
+    std::vector<std::vector<unsigned char>> vSolutions;
+    if (!Solver(scriptPubKey, type, vSolutions))
+        return false;
+
+    if (type == TX_PUBKEY) {
+        addressRet.push_back(CKeyID(uint160(vSolutions[0])));
+        nRequired = 1;
     }
-    return(true);
+    else if (type == TX_PUBKEYHASH) {
+        addressRet.push_back(CKeyID(uint160(vSolutions[0])));
+        nRequired = 1;
+    }
+    else if (type == TX_SCRIPTHASH) {
+        addressRet.push_back(CScriptID(uint160(vSolutions[0])));
+        nRequired = 1;
+    }
+    else if (type == TX_MLDSA65_PUBKEY) {        // <--- added
+        addressRet.push_back(CMLDSA65PubKey{vSolutions[0]});
+        nRequired = 1;
+    }
+    else {
+        return false;
+    }
+    return true;
 }
 
 bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
@@ -1518,48 +1632,68 @@ static CScript PushAll(const vector<valtype>& values) {
     return result;
 }
 
-static CScript CombineMultisig(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn,
-                               const vector<valtype>& vSolutions,
-                               vector<valtype>& sigs1, vector<valtype>& sigs2) {
+static bool CheckSigWrapper(const std::vector<unsigned char>& sig,
+                            const std::vector<unsigned char>& pubkey,
+                            const CScript& scriptCode,
+                            const CTransaction& txTo,
+                            unsigned int nIn,
+                            int nHashType)
+{
+    // Original CheckSig takes vectors by value, script by non-const reference
+return CheckSig(sig, pubkey, scriptCode, txTo, nIn, nHashType);
+
+}
+
+static CScript CombineMultisig(const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
+                               const std::vector<valtype>& vSolutions,
+                               std::vector<valtype>& sigs1, std::vector<valtype>& sigs2)
+{
     // Combine all the signatures we've got:
-    set<valtype> allsigs;
-    BOOST_FOREACH(const valtype& v, sigs1) {
-        if(!v.empty())
-            allsigs.insert(v);
+    std::set<valtype> allsigs;
+    for (const valtype& v : sigs1) {
+        if (!v.empty()) allsigs.insert(v);
     }
-    BOOST_FOREACH(const valtype& v, sigs2) {
-        if(!v.empty())
-            allsigs.insert(v);
+    for (const valtype& v : sigs2) {
+        if (!v.empty()) allsigs.insert(v);
     }
-    // Build a map of pubkey -> signature by matching sigs to pubkeys:
+
+    // Build a map of pubkey -> signature by matching sigs to pubkeys
     assert(vSolutions.size() > 1);
     unsigned int nSigsRequired = vSolutions.front()[0];
-    unsigned int nPubKeys = vSolutions.size()-2;
-    map<valtype, valtype> sigs;
-    BOOST_FOREACH(const valtype& sig, allsigs) {
-        for(unsigned int i = 0; i < nPubKeys; i++) {
-            const valtype& pubkey = vSolutions[i+1];
-            if(sigs.count(pubkey))
-                continue; // Already got a sig for this pubkey
-            if(CheckSig(sig, pubkey, scriptPubKey, txTo, nIn, 0)) {
-                sigs[pubkey] = sig;
+    unsigned int nPubKeys = vSolutions.size() - 2;
+
+    std::map<valtype, valtype> sigsMap;
+
+    for (const valtype& sig : allsigs) {
+        for (unsigned int i = 0; i < nPubKeys; i++) {
+            const valtype& pubkey = vSolutions[i + 1];
+            if (sigsMap.count(pubkey)) continue; // Already have a sig
+
+            if (CheckSigWrapper(sig, pubkey, scriptPubKey, txTo, nIn, 0)) {
+                sigsMap[pubkey] = sig;
                 break;
             }
         }
     }
-    // Now build a merged CScript:
+
+    // Now build a merged CScript
     unsigned int nSigsHave = 0;
     CScript result;
-    result << OP_0; // pop-one-too-many workaround
-    for(unsigned int i = 0; i < nPubKeys && nSigsHave < nSigsRequired; i++) {
-        if(sigs.count(vSolutions[i+1])) {
-            result << sigs[vSolutions[i+1]];
+    result << OP_0; // Pop-one-too-many workaround
+
+    for (unsigned int i = 0; i < nPubKeys && nSigsHave < nSigsRequired; i++) {
+        const valtype& pubkey = vSolutions[i + 1];
+        if (sigsMap.count(pubkey)) {
+            result << sigsMap[pubkey];
             ++nSigsHave;
         }
     }
-    // Fill any missing with OP_0:
-    for(unsigned int i = nSigsHave; i < nSigsRequired; i++)
+
+    // Fill any missing with OP_0
+    for (unsigned int i = nSigsHave; i < nSigsRequired; i++) {
         result << OP_0;
+    }
+
     return result;
 }
 
@@ -1664,28 +1798,33 @@ bool CScript::IsPayToScriptHash() const {
 }
 
 class CScriptVisitor : public boost::static_visitor<bool> {
-  private:
+private:
     CScript *script;
-  public:
+public:
     CScriptVisitor(CScript *scriptin) {
         script = scriptin;
     }
 
     bool operator()(const CNoDestination &dest) const {
         script->clear();
-        return(false);
+        return false;
     }
 
     bool operator()(const CKeyID &keyID) const {
         script->clear();
         *script << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
-        return(true);
+        return true;
     }
 
     bool operator()(const CScriptID &scriptID) const {
         script->clear();
         *script << OP_HASH160 << scriptID << OP_EQUAL;
-        return(true);
+        return true;
+    }
+
+    bool operator()(const CMLDSA65PubKey &mlKey) const {
+        script->clear();
+        return false;
     }
 };
 

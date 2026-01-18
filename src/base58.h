@@ -22,6 +22,8 @@
 #include "key.h"
 #include "script.h"
 
+ static const uint8_t MLDSA65_ADDRESS_VERSION = 0x3A;
+
 /* P2PK and P2PKH addresses begin with 'P' */
 const uchar PUBKEY_ADDRESS_PREFIX = 0x38;
 
@@ -253,6 +255,10 @@ public:
     bool operator()(const CKeyID &id) const;
     bool operator()(const CScriptID &id) const;
     bool operator()(const CNoDestination &no) const;
+    bool operator()(const CMLDSA65PubKey &id) const {
+        // ML-DSA65 addresses are valid by default
+        return true;
+    }
 };
 
 class CCoinAddress : public CBase58Data {

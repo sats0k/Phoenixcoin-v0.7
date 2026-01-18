@@ -193,6 +193,40 @@ static uint256 HashHybridMessage(const std::vector<uint8_t>& msg) {
     return Hash(msg.begin(), msg.end());
 }
 
+bool ParseHybridSignature(const std::vector<unsigned char>& in,
+                          std::vector<Signature>& out)
+{
+    size_t off = 0;
+
+    if (in.size() < 1)
+        return false;
+
+    uint8_t count = in[off++];
+    if (count != 2)
+        return false;
+
+    for (int i = 0; i < 2; i++) {
+        if (off + 3 > in.size())
+            return false;
+
+        uint8_t alg = in[off++];
+        uint16_t len = (uint16_t(in[off]) << 8) | uint16_t(in[off + 1]);
+        off += 2;
+
+        if (len == 0 || off + len > in.size())
+            return false;
+
+        out.push_back(Signature{
+            static_cast<SigAlg>(alg),
+            std::vector<uint8_t>(in.begin() + off,
+                                 in.begin() + off + len)
+        });
+        off += len;
+    }
+
+    return off == in.size(); // no trailing garbage
+}
+
 /* ------------------------------------------------------------------------- */
 /*  Secp256k1Signer                                                          */
 /* ------------------------------------------------------------------------- */

@@ -25,12 +25,22 @@ public:
     friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
 };
 
+// Add this above the CTxDestination typedef
+struct CMLDSA65PubKey {
+    std::vector<unsigned char> pubkey;
+
+    // Required for std::set
+    bool operator<(const CMLDSA65PubKey& other) const {
+        return pubkey < other.pubkey;
+    }
+};
+
 /* A txout script template with a specific destination. It is either:
  *   CNoDestination: no destination set
  *   CKeyID: TX_PUBKEYHASH destination
  *   CScriptID: TX_SCRIPTHASH destination
  * A CTxDestination is the internal data type encoded in a CCoinAddress */
-typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
+typedef boost::variant<CNoDestination, CKeyID, CScriptID, CMLDSA65PubKey> CTxDestination;
 
 /** A virtual base class for key stores */
 class CKeyStore
