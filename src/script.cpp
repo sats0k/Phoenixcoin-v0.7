@@ -1556,35 +1556,74 @@ bool ExtractDestinations(const CScript& scriptPubKey,
     return true;
 }
 
-bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const CTransaction& txTo, unsigned int nIn,
-                  bool fValidatePayToScriptHash, int nHashType) {
-    vector<vector<unsigned char> > stack, stackCopy;
-    if(!EvalScript(stack, scriptSig, txTo, nIn, nHashType))
-        return(false);
-    if(fValidatePayToScriptHash)
+bool VerifyMLDSA65Sig(const std::vector<unsigned char>& sig,
+                      const CMLDSA65PubKey& mlKey,
+                      const CScript& scriptPubKey,
+                      const CTransaction& tx,
+                      unsigned int nIn,
+                      int nHashType)
+{
+    return CheckHybridSig(sig, mlKey.pubkey, scriptPubKey, tx, nIn, nHashType);
+}
+
+bool VerifyScript(
+    const CScript& scriptSig,
+    const CScript& scriptPubKey,
+    const CTransaction& txTo,
+    unsigned int nIn,
+    bool fValidatePayToScriptHash,
+    int nHashType
+) {
+    vector<vector<unsigned char>> stack, stackCopy;
+
+    // Step 1: Evaluate scriptSig
+    if (!EvalScript(stack, scriptSig, txTo, nIn, nHashType))
+        return false;
+
+    if (fValidatePayToScriptHash)
         stackCopy = stack;
-    if(!EvalScript(stack, scriptPubKey, txTo, nIn, nHashType))
-        return(false);
-    if(stack.empty())
-        return(false);
-    if(CastToBool(stack.back()) == false)
-        return(false);
-    // Additional validation for spend-to-script-hash transactions:
-    if(fValidatePayToScriptHash && scriptPubKey.IsPayToScriptHash()) {
-        if(!scriptSig.IsPushOnly())  // scriptSig must be literals-only
-            return(false);            // or validation fails
+
+    // Step 2: Evaluate scriptPubKey
+    if (!EvalScript(stack, scriptPubKey, txTo, nIn, nHashType))
+        return false;
+
+    if (stack.empty() || !CastToBool(stack.back()))
+        return false;
+
+    // Step 3: P2SH validation
+    if (fValidatePayToScriptHash && scriptPubKey.IsPayToScriptHash()) {
+        if (!scriptSig.IsPushOnly())
+            return false;
+
         const valtype& pubKeySerialized = stackCopy.back();
         CScript pubKey2(pubKeySerialized.begin(), pubKeySerialized.end());
         popstack(stackCopy);
-        if(!EvalScript(stackCopy, pubKey2, txTo, nIn, nHashType))
-            return(false);
-        if(stackCopy.empty())
-            return(false);
-        return CastToBool(stackCopy.back());
+        if (!EvalScript(stackCopy, pubKey2, txTo, nIn, nHashType))
+            return false;
+        if (stackCopy.empty() || !CastToBool(stackCopy.back()))
+            return false;
     }
-    return(true);
-}
 
+    // Step 4: Domain-separated MLDSA65 check
+    txnouttype type;
+    vector<valtype> vSolutions;
+    Solver(scriptPubKey, type, vSolutions);
+
+    if (type == TX_MLDSA65_PUBKEY) {
+        if (vSolutions.size() < 2)  // [sig, pubkey]
+            return false;
+
+        const std::vector<unsigned char>& sig = vSolutions[0];
+        const std::vector<unsigned char>& pubkey = vSolutions[1];
+
+        if (!CheckHybridSig(sig, pubkey, scriptPubKey, txTo, nIn, nHashType))
+            return false;
+
+        return true; // MLDSA signature verified
+    }
+
+    return true; // normal script types
+}
 
 bool SignSignature(const CKeyStore &keystore, const CScript& fromPubKey, CTransaction& txTo, unsigned int nIn, int nHashType) {
     assert(nIn < txTo.vin.size());
@@ -1833,9 +1872,16 @@ public:
         return true;
     }
 
+#define OP_MLDSA65 0xBA
     bool operator()(const CMLDSA65PubKey &mlKey) const {
         script->clear();
-        return false;
+
+        // Push ML-DSA opcode and pubkey
+        *script << static_cast<opcodetype>(OP_MLDSA65)
+                << mlKey.pubkey
+                << OP_CHECKSIG;
+
+        return false; // Nonstandard output
     }
 };
 
