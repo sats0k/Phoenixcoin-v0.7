@@ -112,8 +112,6 @@ static EVP_PKEY* MakePKeyFromSecret(const unsigned char* secret,
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
     if (!ctx) return nullptr;
 
-    EVP_PKEY* pkey = nullptr;
-
     if (EVP_PKEY_fromdata_init(ctx) <= 0) {
         ERR_print_errors_fp(stderr);
         EVP_PKEY_CTX_free(ctx);
@@ -125,16 +123,15 @@ static EVP_PKEY* MakePKeyFromSecret(const unsigned char* secret,
         EVP_PKEY_CTX_free(ctx);
         return nullptr;
     }
-
-    unsigned char bn_buf[32];
-    BN_bn2binpad(bn, bn_buf, sizeof(bn_buf));
+    size_t bn_len = BN_num_bytes(bn);
     OSSL_PARAM params[] = {
         OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char*)"secp256k1",
                                0),
-        OSSL_PARAM_BN(OSSL_PKEY_PARAM_PRIV_KEY, bn_buf, sizeof(bn_buf)),
+        OSSL_PARAM_BN(OSSL_PKEY_PARAM_PRIV_KEY, bn, bn_len),
         OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, (void*)pubkey, 65),
         OSSL_PARAM_END};
 
+    EVP_PKEY* pkey = nullptr;
     if (EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEYPAIR, params) <= 0) {
         ERR_print_errors_fp(stderr);
         BN_clear_free(bn);
