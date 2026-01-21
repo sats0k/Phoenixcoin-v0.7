@@ -271,26 +271,33 @@ std::vector<uint8_t> Secp256k1Signer::GetPublicKey() const {
 }
 
 /* ------------------------------------------------------------------------- */
-/*  DilithiumSigner (ML-DSA-65)                                              */
+/*  MLDSASigner (ML-DSA-65)                                                  */
 /* ------------------------------------------------------------------------- */
 
-DilithiumSigner::DilithiumSigner(EVP_PKEY* key) : pkey_(key) {
-    assert(pkey_);
+MLDSASigner::MLDSASigner(EVP_PKEY* key) : pkey_(key) {
+    if (!pkey_)
+        AbortCryptoMisconfig("Null EVP_PKEY passed to MLDSASigner");
+
     EnsureMlDsaAvailable();
-    if (EVP_PKEY_id(pkey_) != EVP_PKEY_ML_DSA_65 ||
-        EVP_PKEY_up_ref(pkey_) != 1)
-        AbortCryptoMisconfig("Invalid EVP_PKEY passed to DilithiumSigner");
+
+    const char* type = EVP_PKEY_get0_type_name(pkey_);
+    if (!type || std::string(type) != "p384_mldsa65") {
+        fprintf(stderr, "MLDSA key type = %s\n", type ? type : "(null)");
+        AbortCryptoMisconfig("Invalid EVP_PKEY passed to MLDSASigner");
+    }
+
+    EVP_PKEY_up_ref(pkey_);
 }
 
-DilithiumSigner::~DilithiumSigner() {
+MLDSASigner::~MLDSASigner() {
     if (pkey_) EVP_PKEY_free(pkey_);
 }
 
-SigAlg DilithiumSigner::Algorithm() const {
+SigAlg MLDSASigner::Algorithm() const {
     return SigAlg::ML_DSA_65;
 }
 
-bool DilithiumSigner::Sign(const std::vector<uint8_t>& msg,
+bool MLDSASigner::Sign(const std::vector<uint8_t>& msg,
                            std::vector<uint8_t>& sig) const {
     auto ctx = MakeMdCtx();
     if (!ctx) return false;
@@ -310,7 +317,7 @@ bool DilithiumSigner::Sign(const std::vector<uint8_t>& msg,
     return true;
 }
 
-bool DilithiumSigner::Verify(const std::vector<uint8_t>& msg,
+bool MLDSASigner::Verify(const std::vector<uint8_t>& msg,
                              const std::vector<uint8_t>& sig) const {
     auto ctx = MakeMdCtx();
     if (!ctx) return false;
@@ -322,7 +329,7 @@ bool DilithiumSigner::Verify(const std::vector<uint8_t>& msg,
                             msg.data(), msg.size()) == 1;
 }
 
-std::vector<uint8_t> DilithiumSigner::GetPublicKey() const {
+std::vector<uint8_t> MLDSASigner::GetPublicKey() const {
     size_t len = 0;
     if (EVP_PKEY_get_raw_public_key(pkey_, nullptr, &len) <= 0) return {};
 
@@ -333,7 +340,7 @@ std::vector<uint8_t> DilithiumSigner::GetPublicKey() const {
     return out;
 }
 
-std::vector<uint8_t> DilithiumSigner::SerializePrivateKey() const {
+std::vector<uint8_t> MLDSASigner::SerializePrivateKey() const {
     size_t pub_len = 0, priv_len = 0;
 
     if (EVP_PKEY_get_raw_public_key(pkey_, nullptr, &pub_len) <= 0 ||
@@ -367,7 +374,7 @@ std::vector<uint8_t> DilithiumSigner::SerializePrivateKey() const {
 }
 
 std::vector<uint8_t>
-DilithiumSigner::SerializePrivateKeyEncrypted(
+MLDSASigner::SerializePrivateKeyEncrypted(
     const std::vector<uint8_t>& password) const {
 
     auto pt = SerializePrivateKey();
@@ -453,8 +460,8 @@ private:
     size_t off{0};
 };
 
-std::unique_ptr<DilithiumSigner>
-DilithiumSigner::FromEncryptedSerialized(
+std::unique_ptr<MLDSASigner>
+MLDSASigner::FromEncryptedSerialized(
     const std::vector<uint8_t>& password,
     const std::vector<uint8_t>& in) {
 
@@ -505,8 +512,8 @@ DilithiumSigner::FromEncryptedSerialized(
     return FromSerializedV2(pt);
 }
 
-std::unique_ptr<DilithiumSigner>
-DilithiumSigner::FromSerialized(const std::vector<uint8_t>& in) {
+std::unique_ptr<MLDSASigner>
+MLDSASigner::FromSerialized(const std::vector<uint8_t>& in) {
     Cursor c(in);
 
     uint8_t alg;
@@ -541,15 +548,15 @@ DilithiumSigner::FromSerialized(const std::vector<uint8_t>& in) {
         return nullptr;
     }
 
-    return std::make_unique<DilithiumSigner>(pkey);
+    return std::make_unique<MLDSASigner>(pkey);
 }
 
 /* ------------------------------------------------------------------------- */
 /*  v2 Serialization Parser (ML-DSA-65 only)                                 */
 /* ------------------------------------------------------------------------- */
 
-std::unique_ptr<DilithiumSigner>
-DilithiumSigner::FromSerializedV2(const std::vector<uint8_t>& in) {
+std::unique_ptr<MLDSASigner>
+MLDSASigner::FromSerializedV2(const std::vector<uint8_t>& in) {
     Cursor c(in);
 
     /* magic */
@@ -611,7 +618,7 @@ DilithiumSigner::FromSerializedV2(const std::vector<uint8_t>& in) {
         EVP_PKEY_free(pkey);
         return nullptr;
     }
-    return std::make_unique<DilithiumSigner>(pkey);
+    return std::make_unique<MLDSASigner>(pkey);
 }
 
 /* ------------------------------------------------------------------------- */

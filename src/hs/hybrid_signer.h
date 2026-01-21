@@ -118,13 +118,13 @@ private:
 /* ------------------------------------------------------------------------- */
 
 // Owns an EVP_PKEY (raw ML-DSA key).
-class DilithiumSigner final : public ISigner {
+class MLDSASigner final : public ISigner {
 public:
-    explicit DilithiumSigner(EVP_PKEY* key);
-    ~DilithiumSigner() override;
+    explicit MLDSASigner(EVP_PKEY* key);
+    ~MLDSASigner() override;
 
-    DilithiumSigner(const DilithiumSigner&) = delete;
-    DilithiumSigner& operator=(const DilithiumSigner&) = delete;
+    MLDSASigner(const MLDSASigner&) = delete;
+    MLDSASigner& operator=(const MLDSASigner&) = delete;
 
     SigAlg Algorithm() const override;
 
@@ -142,16 +142,18 @@ public:
     SerializePrivateKeyEncrypted(
         const std::vector<uint8_t>& password) const override;
 
-    static std::unique_ptr<DilithiumSigner>
+    static std::unique_ptr<MLDSASigner>
     FromSerialized(const std::vector<uint8_t>& in);
 
-    static std::unique_ptr<DilithiumSigner>
+    static std::unique_ptr<MLDSASigner>
     FromSerializedV2(const std::vector<uint8_t>& in);
 
-    static std::unique_ptr<DilithiumSigner>
+    static std::unique_ptr<MLDSASigner>
     FromEncryptedSerialized(
         const std::vector<uint8_t>& password,
         const std::vector<uint8_t>& in);
+
+    static std::unique_ptr<MLDSASigner> GenerateNew();
 
 private:
     EVP_PKEY* pkey_;
