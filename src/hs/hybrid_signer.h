@@ -17,8 +17,6 @@
 
 #include "key.h"
 
-#include <openssl/opensslv.h>
-
 /* ------------------------------------------------------------------------- */
 /* Serialization format constants                                            */
 /* ------------------------------------------------------------------------- */
@@ -27,6 +25,11 @@ static constexpr uint8_t HYBRID_MAGIC[4] = { 'H','Y','B','K' };
 
 static constexpr uint8_t HYBRID_VERSION       = 2;
 static constexpr uint8_t HYBRID_VERSION_ENC   = 3;
+
+static constexpr uint8_t HYBRID_SIG_MAGIC[4] = {'H','Y','B','S'};
+
+static constexpr uint8_t HYBRIDKEY_DISK_VERSION = 2;
+static constexpr uint8_t HYBRID_SIG_VERSION = 1;
 
 /* Encrypted key serialization parameters (v3) */
 static constexpr size_t ENC_SALT_LEN  = 16;
@@ -123,6 +126,8 @@ public:
     explicit MLDSASigner(EVP_PKEY* key);
     ~MLDSASigner() override;
 
+    EVP_PKEY* GetKey() const { return pkey_; }
+
     MLDSASigner(const MLDSASigner&) = delete;
     MLDSASigner& operator=(const MLDSASigner&) = delete;
 
@@ -154,6 +159,10 @@ public:
         const std::vector<uint8_t>& in);
 
     static std::unique_ptr<MLDSASigner> GenerateNew();
+
+    static std::unique_ptr<MLDSASigner>
+    FromSeed(const std::vector<uint8_t>& seed,
+             const CKeyID& keyid, const std::string& alg);
 
 private:
     EVP_PKEY* pkey_;

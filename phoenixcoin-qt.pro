@@ -231,6 +231,7 @@ HEADERS += src/qt/gui.h \
     src/ecies/ecies.h \
     src/ntp.h \
     src/hs/hybrid_signer.h \
+    src/hs/wallethybrid.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
 
@@ -304,6 +305,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/ecies/ecies.cpp \
     src/ntp.cpp \
     src/hs/hybrid_signer.cpp \
+    src/hs/wallethybrid.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
 

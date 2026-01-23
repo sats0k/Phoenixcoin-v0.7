@@ -23,6 +23,7 @@
 #include "ui_interface.h"
 #include "walletdb.h"
 #include "main.h"
+#include "hs/wallethybrid.h"
 
 class CAccountingEntry;
 class CWalletTx;
@@ -87,6 +88,9 @@ private:
 
 public:
     mutable CCriticalSection cs_wallet;
+
+    std::map<CKeyID, CHybridKey> mapHybridKeys;
+    std::map<CKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
 
     bool fFileBacked;
     std::string strWalletFile;
@@ -288,6 +292,8 @@ public:
     void SetBestChain(const CBlockLocator& loc);
 
     DBErrors LoadWallet(bool& fFirstRunRet);
+
+    void LoadHybridKeys();
 
     bool SetAddressBookName(const CTxDestination& address, const std::string& strName);
 

@@ -31,6 +31,31 @@
  *  - Hybrid verification requires exactly one signature per algorithm
  */
 
+std::unique_ptr<MLDSASigner> MLDSASigner::GenerateNew() {
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA_65, nullptr);
+    if (!ctx) {
+        fprintf(stderr, "Failed to create EVP_PKEY_CTX for ML-DSA-65\n");
+        std::abort();
+    }
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0) {
+        fprintf(stderr, "EVP_PKEY_keygen_init failed\n");
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+
+    EVP_PKEY* pkey = nullptr;
+    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
+        fprintf(stderr, "EVP_PKEY_keygen failed\n");
+        EVP_PKEY_CTX_free(ctx);
+        return nullptr;
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    return std::make_unique<MLDSASigner>(pkey);
+}
+
 static void AbortCryptoMisconfig(const char* msg) {
     ERR_print_errors_fp(stderr);
     fprintf(stderr, "FATAL CRYPTO ERROR: %s\n", msg);
@@ -198,7 +223,15 @@ bool ParseHybridSignature(const std::vector<unsigned char>& in,
 {
     size_t off = 0;
 
-    if (in.size() < 1)
+    if (in.size() < 6)
+        return false;
+
+    if (memcmp(&in[off], HYBRID_SIG_MAGIC, 4) != 0)
+        return false;
+    off += 4;
+
+    uint8_t ver = in[off++];
+    if (ver != HYBRID_SIG_VERSION)
         return false;
 
     uint8_t count = in[off++];
@@ -281,7 +314,7 @@ MLDSASigner::MLDSASigner(EVP_PKEY* key) : pkey_(key) {
     EnsureMlDsaAvailable();
 
     const char* type = EVP_PKEY_get0_type_name(pkey_);
-    if (!type || std::string(type) != "p384_mldsa65") {
+    if (!type || std::string(type) != "ML-DSA-65") {
         fprintf(stderr, "MLDSA key type = %s\n", type ? type : "(null)");
         AbortCryptoMisconfig("Invalid EVP_PKEY passed to MLDSASigner");
     }
@@ -407,6 +440,8 @@ MLDSASigner::SerializePrivateKeyEncrypted(
     std::vector<uint8_t> out;
     out.insert(out.end(), HYBRID_MAGIC, HYBRID_MAGIC + 4);
     out.push_back(HYBRID_VERSION_ENC);
+    out.insert(out.end(), HYBRID_SIG_MAGIC, HYBRID_SIG_MAGIC + 4);
+    out.push_back(HYBRID_SIG_VERSION);
     out.insert(out.end(), salt, salt + ENC_SALT_LEN);
     out.insert(out.end(), nonce, nonce + ENC_NONCE_LEN);
     out.insert(out.end(), ct.begin(), ct.end());

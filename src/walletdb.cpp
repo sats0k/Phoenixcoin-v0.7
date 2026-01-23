@@ -17,6 +17,7 @@
 #include "base58.h"
 #include "walletdb.h"
 #include "wallet.h"
+#include "hs/wallethybrid.h"
 
 using namespace std;
 using namespace boost;
@@ -26,6 +27,45 @@ static uint64 nAccountingEntryNumber = 0;
 //
 // CWalletDB
 //
+
+bool CWalletDB::LoadAllHybridKeys(std::vector<CHybridKeyDisk> &vKeys)
+{
+    vKeys.clear();
+    Dbc* pcursor = GetCursor();
+    if (!pcursor) return false;
+
+    while (true) {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION);
+        int ret = ReadAtCursor(pcursor, ssKey, ssValue);
+        if (ret == DB_NOTFOUND) break;
+        if (ret != 0) return false;
+
+        std::string strType;
+        ssKey >> strType;
+        if (strType != "hyb") continue; // must match write prefix
+
+        CKeyID keyID;
+        ssKey >> keyID;
+
+        CHybridKeyDisk disk;
+        ssValue >> disk;
+
+        vKeys.push_back(disk);
+    }
+
+    pcursor->close();
+    return true;
+}
+
+bool CWalletDB::WriteHybridKey(const CKeyID &keyID, const CHybridKeyDisk &disk)
+{
+    return Write(std::make_pair(std::string("hyb"), keyID), disk);
+}
+
+bool CWalletDB::WriteHybridKeyMetadata(const CKeyID& keyid, const CHybridKeyMetadata& meta)
+{
+    return Write(std::make_pair(std::string("hybridkeymeta"), keyid), meta);
+}
 
 bool CWalletDB::WriteName(const string& strAddress, const string& strName)
 {

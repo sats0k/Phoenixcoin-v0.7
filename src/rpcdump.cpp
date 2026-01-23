@@ -11,6 +11,7 @@
 #include "base58.h"
 #include "wallet.h"
 #include "rpcmain.h"
+#include "hs/wallethybrid.h"
 
 using namespace json_spirit;
 using namespace std;
@@ -311,4 +312,69 @@ Value dumpwallet(const Array &params, bool fHelp) {
       throw(JSONRPCError(RPC_WALLET_ERROR, "Failed while exporting keys from the wallet"));
 
     return(Value::null);
+}
+
+Value dumphybridkey(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1) {
+        string msg =
+            "dumphybridkey <address>\n"
+            "Reveals the hybrid private key (secp256k1 + MLDSA) for <address>.";
+        throw runtime_error(msg);
+    }
+
+    string strAddress = params[0].get_str();
+    CCoinAddress address;
+    if (!address.SetString(strAddress))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
+
+    CKeyID keyID;
+    if (!address.GetKeyID(keyID))
+        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to a key");
+
+    LOCK(pwalletMain->cs_wallet);
+
+    // ---- secp256k1 (same as dumpprivkey) ----
+    CSecret vchSecret;
+    bool fCompressed;
+    if (!pwalletMain->GetSecret(keyID, vchSecret, fCompressed)) {
+        throw JSONRPCError(
+            RPC_WALLET_ERROR,
+            "Private key for address " + strAddress + " is not known");
+    }
+
+    string wif = CCoinSecret(vchSecret, fCompressed).ToString();
+
+    // ---- hybrid MLDSA ----
+    std::map<CKeyID, std::unique_ptr<MLDSASigner> >::const_iterator it =
+        pwalletMain->mapHybridSigners.find(keyID);
+
+    if (it == pwalletMain->mapHybridSigners.end())
+        throw JSONRPCError(RPC_WALLET_ERROR, "No hybrid key for this address");
+
+    MLDSASigner* signer = it->second.get();
+    EVP_PKEY* pkey = signer->GetKey();
+    if (!pkey)
+        throw JSONRPCError(RPC_WALLET_ERROR, "MLDSA key missing");
+
+    // Serialize MLDSA private key to DER
+    unsigned char* buf = NULL;
+    int len = i2d_PrivateKey(pkey, &buf);
+    if (len <= 0 || !buf)
+        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to serialize MLDSA key");
+
+    vector<unsigned char> der(buf, buf + len);
+    OPENSSL_free(buf);
+
+    string der_b64 = EncodeBase64(der.data(), der.size());
+
+    Object result;
+    result.push_back(Pair("address", address.ToString()));
+    result.push_back(Pair("secp_wif", wif));
+    result.push_back(Pair("mldsa_alg", "p384_mldsa65"));
+    result.push_back(Pair("mldsa_priv_der_b64", der_b64));
+    result.push_back(Pair("hybridkey_disk_version", HYBRIDKEY_DISK_VERSION));
+    result.push_back(Pair("hybrid_sig_version", HYBRID_SIG_VERSION));
+
+    return result;
 }

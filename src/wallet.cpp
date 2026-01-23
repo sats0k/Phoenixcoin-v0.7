@@ -11,6 +11,7 @@
 #include "crypter.h"
 #include "walletdb.h"
 #include "wallet.h"
+#include "hs/wallethybrid.h"
 
 using namespace std;
 
@@ -53,21 +54,63 @@ CPubKey CWallet::GenerateNewKey()
     return(pubkey);
 }
 
-bool CWallet::AddKey(const CKey &key) {
+bool CWallet::AddKey(const CKey &key)
+{
     CPubKey pubkey = key.GetPubKey();
+    CKeyID keyID = pubkey.GetID();
 
-    if(!CCryptoKeyStore::AddKey(key))
-      return(false);
+    if (!CCryptoKeyStore::AddKey(key))
+        return false;
 
-    if(!fFileBacked)
-      return(true);
+    // ---- Hybrid key auto-binding ----
+    if (mapHybridSigners.count(keyID) == 0) {
+        try {
+            CHybridKey hk;
+            hk.secpPriv = key.GetPrivKey();
+            hk.secpPub  = pubkey;
+            hk.nCreateTime = GetTime();
+            hk.mldsaAlg = "p384_mldsa65";
 
-    if(!IsCrypted()) {
-       return(CWalletDB(strWalletFile).WriteKey(pubkey, key.GetPrivKey(),
-         mapKeyMetadata[pubkey.GetID()]));
+            hk.mldsaSigner = MLDSASigner::GenerateNew();
+            if (!hk.mldsaSigner)
+                throw std::runtime_error("MLDSA keygen failed");
+
+            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
+
+            // Persist ONLY if wallet is file-backed and unlocked
+            if (fFileBacked && !IsCrypted()) {
+                CWalletDB walletdb(strWalletFile);
+                if (!walletdb.WriteHybridKey(keyID, disk))
+                    throw std::runtime_error("WriteHybridKey failed");
+            }
+
+            // In-memory ownership (always)
+            EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
+            EVP_PKEY_up_ref(pkey);
+
+            mapHybridSigners[keyID] =
+                std::unique_ptr<MLDSASigner>(new MLDSASigner(pkey));
+            mapHybridKeys[keyID] = std::move(hk);
+
+            printf("Hybrid key bound to address %s\n",
+                   keyID.ToString().c_str());
+        } catch (const std::exception& e) {
+            printf("WARNING: hybrid key creation failed: %s\n", e.what());
+        }
     }
 
-    return(true);
+    // ---- Existing wallet behavior ----
+    if (!fFileBacked)
+        return true;
+
+    if (!IsCrypted()) {
+        return CWalletDB(strWalletFile).WriteKey(
+            pubkey,
+            key.GetPrivKey(),
+            mapKeyMetadata[keyID]);
+    }
+
+    return true;
 }
 
 bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const vector<uchar> &vchCryptedSecret) {
@@ -1498,12 +1541,33 @@ DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
 
     if (nLoadWalletRet != DB_LOAD_OK)
         return nLoadWalletRet;
+
+    LoadHybridKeys();
+
     fFirstRunRet = !vchDefaultKey.IsValid();
 
     NewThread(ThreadFlushWalletDB, &strWalletFile);
     return DB_LOAD_OK;
 }
 
+void CWallet::LoadHybridKeys()
+{
+    if (!fFileBacked) return;
+    LOCK(cs_wallet);
+
+    CWalletDB walletdb(strWalletFile);
+    std::vector<CHybridKeyDisk> disks;
+    if (!walletdb.LoadAllHybridKeys(disks)) {
+        printf("WARNING: failed to load hybrid keys from DB\n");
+        return;
+    }
+
+    for (const auto &disk : disks) {
+        if (!LoadHybridKey(this, disk)) {
+            printf("WARNING: failed to load hybrid key %s\n", disk.secpPub.GetID().ToString().c_str());
+        }
+    }
+}
 
 bool CWallet::SetAddressBookName(const CTxDestination& address, const string& strName)
 {

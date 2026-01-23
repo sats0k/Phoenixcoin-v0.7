@@ -29,6 +29,7 @@
 #include "util.h"
 #include "rpcmain.h"
 #include "init.h"
+#include "hs/wallethybrid.h"
 
 using namespace std;
 using namespace boost;
@@ -804,6 +805,12 @@ bool AppInit2()
 
     printf("%s", strErrors.str().c_str());
     printf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
+
+    // Create first hybrid key
+    EnsureFirstHybridKey(pwalletMain);
+
+    // Optional: pre-fill hybrid keypool
+    NewHybridKeyPool(pwalletMain, 100);
 
     RegisterWallet(pwalletMain);
 

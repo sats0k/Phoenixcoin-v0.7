@@ -134,6 +134,7 @@ OBJS = \
     obj/wallet.o \
     obj/walletdb.o \
     obj/hybrid_signer.o \
+    obj/wallethybrid.o \
     obj/neoscrypt.o \
     obj/neoscrypt_asm.o \
     obj/ecies.o \
@@ -171,6 +172,9 @@ obj/secure.o: ecies/secure.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 obj/hybrid_signer.o: hs/hybrid_signer.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/wallethybrid.o: hs/wallethybrid.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 # Paths to PQClean Kyber implementation
