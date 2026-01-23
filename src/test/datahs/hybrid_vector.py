@@ -8,8 +8,9 @@ from Crypto.Hash import SHA256
 # =====================================================================
 # Constants — MUST match C++
 # =====================================================================
+HYBRID_VERSION_ENC = 3
 PASSWORD = b"correct horse battery staple"
-AAD = b"HYBK\x01"
+AAD = b"HYBK" + bytes([HYBRID_VERSION_ENC])
 
 # =====================================================================
 # Generic loader
