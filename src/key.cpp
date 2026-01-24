@@ -123,11 +123,13 @@ static EVP_PKEY* MakePKeyFromSecret(const unsigned char* secret,
         EVP_PKEY_CTX_free(ctx);
         return nullptr;
     }
-    size_t bn_len = BN_num_bytes(bn);
+
+    unsigned char bn_buf[32];
+    BN_bn2binpad(bn, bn_buf, sizeof(bn_buf));
     OSSL_PARAM params[] = {
         OSSL_PARAM_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char*)"secp256k1",
                                0),
-        OSSL_PARAM_BN(OSSL_PKEY_PARAM_PRIV_KEY, bn, bn_len),
+        OSSL_PARAM_BN(OSSL_PKEY_PARAM_PRIV_KEY, bn_buf, sizeof(bn_buf)),
         OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, (void*)pubkey, 65),
         OSSL_PARAM_END};
 
