@@ -54,6 +54,45 @@ CPubKey CWallet::GenerateNewKey()
     return(pubkey);
 }
 
+// ---- Helper to bind hybrid key on demand ----
+bool CWallet::EnsureHybridKey(const CKeyID& keyID)
+{
+    if (mapHybridSigners.count(keyID))
+        return true;
+
+    CKey key;
+    if (!GetKey(keyID, key))
+        return false;
+
+    try {
+        CHybridKey hk;
+        hk.secpPriv = key.GetPrivKey();
+        hk.secpPub  = key.GetPubKey();
+        hk.nCreateTime = GetTime();
+        hk.mldsaAlg = "p384_mldsa65";
+
+        hk.mldsaSigner = MLDSASigner::GenerateNew();
+        if (!hk.mldsaSigner)
+            return false;
+
+        if (fFileBacked && !IsCrypted()) {
+            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
+            CWalletDB walletdb(strWalletFile);
+            walletdb.WriteHybridKey(keyID, disk);
+        }
+
+        EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
+        EVP_PKEY_up_ref(pkey);
+
+        mapHybridSigners[keyID].reset(new MLDSASigner(pkey));
+        mapHybridKeys[keyID] = std::move(hk);
+        return true;
+
+    } catch (...) {
+        return false;
+    }
+}
+
 bool CWallet::AddKey(const CKey &key)
 {
     CPubKey pubkey = key.GetPubKey();
@@ -63,7 +102,7 @@ bool CWallet::AddKey(const CKey &key)
         return false;
 
     // ---- Hybrid key auto-binding ----
-    if (mapHybridSigners.count(keyID) == 0) {
+    if (!fFillingKeyPool && mapHybridSigners.count(keyID) == 0) {
         try {
             CHybridKey hk;
             hk.secpPriv = key.GetPrivKey();
@@ -75,16 +114,14 @@ bool CWallet::AddKey(const CKey &key)
             if (!hk.mldsaSigner)
                 throw std::runtime_error("MLDSA keygen failed");
 
-            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
-
             // Persist ONLY if wallet is file-backed and unlocked
             if (fFileBacked && !IsCrypted()) {
+                CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
                 CWalletDB walletdb(strWalletFile);
-                if (!walletdb.WriteHybridKey(keyID, disk))
-                    throw std::runtime_error("WriteHybridKey failed");
+                walletdb.WriteHybridKey(keyID, disk);
             }
 
-            // In-memory ownership (always)
+            // In-memory ownership
             EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
             EVP_PKEY_up_ref(pkey);
 
@@ -92,8 +129,7 @@ bool CWallet::AddKey(const CKey &key)
                 std::unique_ptr<MLDSASigner>(new MLDSASigner(pkey));
             mapHybridKeys[keyID] = std::move(hk);
 
-            printf("Hybrid key bound to address %s\n",
-                   keyID.ToString().c_str());
+            printf("Hybrid key bound to address %s\n", keyID.ToString().c_str());
         } catch (const std::exception& e) {
             printf("WARNING: hybrid key creation failed: %s\n", e.what());
         }
@@ -1671,6 +1707,7 @@ bool CWallet::TopUpKeyPool()
             return false;
 
         CWalletDB walletdb(strWalletFile);
+        fFillingKeyPool = true;
 
         // Top up key pool
         unsigned int nTargetSize = max(GetArg("-keypool", 100), 0LL);
@@ -1685,6 +1722,7 @@ bool CWallet::TopUpKeyPool()
             printf("keypool added key %" PRI64d ", size=%" PRIszu "\n",
               nEnd, setKeyPool.size());
         }
+        fFillingKeyPool = false;
     }
     return true;
 }

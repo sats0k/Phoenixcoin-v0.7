@@ -89,6 +89,9 @@ private:
 public:
     mutable CCriticalSection cs_wallet;
 
+    bool EnsureHybridKey(const CKeyID& keyID);
+    bool fFillingKeyPool;
+
     std::map<CKeyID, CHybridKey> mapHybridKeys;
     std::map<CKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
 

@@ -346,9 +346,10 @@ Value dumphybridkey(const Array& params, bool fHelp)
     string wif = CCoinSecret(vchSecret, fCompressed).ToString();
 
     // ---- hybrid MLDSA ----
-    std::map<CKeyID, std::unique_ptr<MLDSASigner> >::const_iterator it =
-        pwalletMain->mapHybridSigners.find(keyID);
+    if (!pwalletMain->EnsureHybridKey(keyID))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to create hybrid key");
 
+    auto it = pwalletMain->mapHybridSigners.find(keyID);
     if (it == pwalletMain->mapHybridSigners.end())
         throw JSONRPCError(RPC_WALLET_ERROR, "No hybrid key for this address");
 
