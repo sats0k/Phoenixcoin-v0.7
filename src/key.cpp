@@ -219,6 +219,7 @@ bool CKey::SetPrivKey(const CPrivKey& vchPrivKey) {
     pkey = tmp;
     vchSecret = secret;
     vchPubKey = pubkey;
+    fCompressedPubKey = true;
     fSet = true;
     return true;
 }
@@ -304,7 +305,13 @@ bool CKey::SetPubKey(const CPubKey& vchPubKeyIn) {
     return true;
 }
 
-CPubKey CKey::GetPubKey() const { return vchPubKey; }
+CPubKey CKey::GetPubKey() const {
+    if (!fCompressedPubKey) {
+        // legacy key → force upgrade
+        const_cast<CKey*>(this)->fCompressedPubKey = true;
+    }
+    return vchPubKey;
+}
 
 /* ---------- Signing ---------- */
 
