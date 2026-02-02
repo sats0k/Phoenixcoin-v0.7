@@ -57,11 +57,25 @@ OSSL_LIB_CTX* GetOqsLibCtx()
 
 /* ----------  Global secp256k1 context ---------- */
 static secp256k1_context* g_secp256k1_verify_ctx = [] {
-    return secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    auto* ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    if (!ctx)
+        throw std::runtime_error("Failed to create secp256k1 verify context");
+    return ctx;
 }();
 
 static thread_local secp256k1_context* g_secp256k1_sign_ctx = [] {
-    return secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    auto* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    if (!ctx)
+        throw std::runtime_error("Failed to create secp256k1 sign context");
+
+    unsigned char seed[32];
+    if (RAND_bytes(seed, sizeof(seed)) != 1)
+        throw std::runtime_error("RAND_bytes failed");
+
+    if (!secp256k1_context_randomize(ctx, seed))
+        throw std::runtime_error("Failed to randomize secp256k1 sign context");
+
+    return ctx;
 }();
 
 /* ---------- Forward declarations ---------- */
