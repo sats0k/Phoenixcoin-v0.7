@@ -1,11 +1,11 @@
 TEMPLATE = app
 TARGET = phoenixcoin-qt
 VERSION = 0.7.0
-INCLUDEPATH += src src/json src/qt src/secp256k1/include
+INCLUDEPATH += src src/json src/qt
 DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE
 CONFIG += no_include_pwd
 CONFIG += thread
-QMAKE_CFLAGS += -DNEOSCRYPT_SHA256 -DNEOSCRYPT_ASM -DNEOSCRYPT_OPT -L secp256k1/.libs/
+QMAKE_CFLAGS += -DNEOSCRYPT_SHA256 -DNEOSCRYPT_ASM -DNEOSCRYPT_OPT
 QT += core gui network
 
 greaterThan(QT_MAJOR_VERSION, 4): {
@@ -387,10 +387,6 @@ LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX -lsecp256k1
 # -lgdi32 has to happen after -lcrypto (see  #681)
 win32:LIBS += -lws2_32 -lmswsock -lshlwapi -lole32 -loleaut32 -luuid -lgdi32
 
-if (BOOST_VERSION < 108900) {
-LIBS += -lboost_system$$BOOST_LIB_SUFFIX -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_LIB_SUFFIX
-} else {
 LIBS += -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_LIB_SUFFIX
-}
 
 system($$QMAKE_LRELEASE -silent $$_PRO_FILE_)
