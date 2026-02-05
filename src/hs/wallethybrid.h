@@ -82,8 +82,12 @@ public:
         READWRITE(nCreateTime);
         READWRITE(secpPriv);
         READWRITE(secpPub);
+
+        if (nVersion >= 2) {
         READWRITE(mldsaAlg);
         READWRITE(mldsaPrivKey);
+        }
+
         READWRITE(hashChecksum);
     )
 };
