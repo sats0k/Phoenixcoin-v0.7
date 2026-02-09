@@ -105,7 +105,6 @@ std::unique_ptr<MLDSASigner> GetSignerFromKey(const CHybridKey& hk);
 // Wallet integration
 // -----------------------------
 bool LoadHybridKey(class CWallet* wallet, const CHybridKeyDisk& disk);
-bool EnsureFirstHybridKey(class CWallet* wallet);
 void NewHybridKeyPool(class CWallet* wallet, int nSize);
 
 #endif  // WALLETHYBRID_H

@@ -20,33 +20,25 @@
 #include <openssl/core_names.h>
 
 // -----------------------------
-// CHybridKeyDisk methods
+// CHybridKeyDisk
 // -----------------------------
 void CHybridKeyDisk::ComputeChecksum()
 {
     CDataStream ss(SER_DISK, CLIENT_VERSION);
-    ss << nVersion << nCreateTime
-       << secpPriv << secpPub
-       << mldsaAlg;
-
+    ss << nVersion << nCreateTime << secpPriv << secpPub << mldsaAlg;
     ::WriteCompactSize(ss, mldsaPrivKey.size());
     if (!mldsaPrivKey.empty())
         ss.write((const char*)&mldsaPrivKey[0], mldsaPrivKey.size());
-
     hashChecksum = Hash(ss.begin(), ss.end());
 }
 
 bool CHybridKeyDisk::CheckChecksum() const
 {
     CDataStream ss(SER_DISK, CLIENT_VERSION);
-    ss << nVersion << nCreateTime
-       << secpPriv << secpPub
-       << mldsaAlg;
-
+    ss << nVersion << nCreateTime << secpPriv << secpPub << mldsaAlg;
     ::WriteCompactSize(ss, mldsaPrivKey.size());
     if (!mldsaPrivKey.empty())
         ss.write((const char*)&mldsaPrivKey[0], mldsaPrivKey.size());
-
     return hashChecksum == Hash(ss.begin(), ss.end());
 }
 
@@ -59,7 +51,7 @@ CHybridKeyDisk CHybridKeyDisk::FromMemory(const CHybridKey& hk)
     disk.secpPub     = hk.secpPub;
     disk.mldsaAlg    = hk.mldsaAlg;
 
-    // Serialize MLDSA private key to DER
+    // Serialize MLDSA private key
     EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
     if (!pkey)
         throw std::runtime_error("MLDSA signer has no key");
@@ -81,19 +73,17 @@ CHybridKeyDisk CHybridKeyDisk::FromMemory(const CHybridKey& hk)
 // -----------------------------
 void GenerateHybridKey(CHybridKey& hk)
 {
-    // Generate secp256k1 key
     CKey key;
-    key.MakeNewKey(true);  // compressed
+    key.MakeNewKey(true);
     hk.secpPriv = key.GetPrivKey();
     hk.secpPub  = key.GetPubKey();
 
-    // Generate MLDSA key
     hk.mldsaSigner = MLDSASigner::GenerateNew();
     if (!hk.mldsaSigner)
         throw std::runtime_error("Failed to generate MLDSA key");
 
-    // Set creation time
     hk.nCreateTime = GetTime();
+    hk.mldsaAlg    = "p384_mldsa65";
 }
 
 std::unique_ptr<MLDSASigner> GetSignerFromKey(const CHybridKey& hk)
@@ -102,47 +92,12 @@ std::unique_ptr<MLDSASigner> GetSignerFromKey(const CHybridKey& hk)
         printf("Hybrid key has no MLDSA signer\n");
         return nullptr;
     }
-
     EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
     if (!pkey) {
         printf("MLDSASigner contains no key\n");
         return nullptr;
     }
-
-    EVP_PKEY_up_ref(pkey); // OpenSSL 3 safe
-    return std::make_unique<MLDSASigner>(pkey);
-}
-
-std::unique_ptr<MLDSASigner> MLDSASigner::FromSeed(
-    const std::vector<uint8_t>& seed,
-    const CKeyID& keyid,
-    const std::string& alg)
-{
-    const char* algo = "p384_mldsa65";
-
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(nullptr, algo, nullptr);
-    if (!ctx) {
-        printf("EVP_PKEY_CTX_new_from_name failed for %s\n", algo);
-        ERR_print_errors_fp(stdout);
-        return nullptr;
-    }
-
-    if (EVP_PKEY_keygen_init(ctx) <= 0) {
-        printf("EVP_PKEY_keygen_init failed\n");
-        ERR_print_errors_fp(stdout);
-        EVP_PKEY_CTX_free(ctx);
-        return nullptr;
-    }
-
-    EVP_PKEY* pkey = nullptr;
-    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
-        printf("EVP_PKEY_keygen failed for key %s\n", keyid.ToString().c_str());
-        ERR_print_errors_fp(stdout);
-        EVP_PKEY_CTX_free(ctx);
-        return nullptr;
-    }
-
-    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_up_ref(pkey);
     return std::make_unique<MLDSASigner>(pkey);
 }
 
@@ -151,158 +106,176 @@ std::unique_ptr<MLDSASigner> MLDSASigner::FromSeed(
 // -----------------------------
 bool LoadHybridKey(CWallet* wallet, const CHybridKeyDisk& disk)
 {
-    LOCK(wallet->cs_wallet);
+    CHybridKey mem;
+    std::unique_ptr<MLDSASigner> signer;
 
+    // ---- Validate disk ----
     if (disk.nVersion != HYBRIDKEY_DISK_VERSION) {
         printf("FAIL: unsupported hybrid key disk version %u\n", disk.nVersion);
         return false;
     }
-
     if (!disk.CheckChecksum()) {
         printf("FAIL: checksum mismatch\n");
         return false;
     }
-
     if (disk.mldsaPrivKey.empty()) {
         printf("FAIL: empty MLDSA private key\n");
         return false;
     }
 
-    // Deserialize secp key
-    CHybridKey mem;
-    mem.nCreateTime = disk.nCreateTime;
-    mem.secpPriv    = disk.secpPriv;
-    mem.secpPub     = disk.secpPub;
-    mem.mldsaAlg    = disk.mldsaAlg;
+    try {
+        // Deserialize secp key
+        mem.nCreateTime = disk.nCreateTime;
+        mem.secpPriv    = disk.secpPriv;
+        mem.secpPub     = disk.secpPub;
+        mem.mldsaAlg    = disk.mldsaAlg;
 
-    CKey key;
-    if (!key.SetPrivKey(mem.secpPriv) || !key.IsValid()) {
-        printf("FAIL: invalid secp key\n");
+        CKey key;
+        if (!key.SetPrivKey(mem.secpPriv) || !key.IsValid())
+            throw std::runtime_error("invalid secp private key");
+        key.SetPubKey(mem.secpPub);
+
+        // Deserialize MLDSA key
+        const unsigned char* p = disk.mldsaPrivKey.data();
+        EVP_PKEY* pkey = d2i_AutoPrivateKey(nullptr, &p, disk.mldsaPrivKey.size());
+        if (!pkey)
+            throw std::runtime_error("MLDSA private key decode failed");
+
+        // Construct MLDSASigner
+        mem.mldsaSigner = std::make_unique<MLDSASigner>(pkey);
+        signer = std::make_unique<MLDSASigner>(pkey);
+
+    } catch (const std::exception& e) {
+        printf("LoadHybridKey failed: %s\n", e.what());
         return false;
     }
-    key.SetPubKey(mem.secpPub);
 
-    // Load MLDSA key
-    const unsigned char* p = disk.mldsaPrivKey.data();
-    EVP_PKEY* pkey = d2i_AutoPrivateKey(nullptr, &p, disk.mldsaPrivKey.size());
-    if (!pkey) {
-        ERR_print_errors_fp(stdout);
-        printf("FAIL: MLDSA private key decode failed\n");
-        return false;
-    }
-
-    auto signer = std::make_unique<MLDSASigner>(pkey);
-    wallet->mapHybridSigners[mem.GetKeyID()] = std::move(signer);
-
-    printf("Hybrid key %s loaded successfully\n", mem.GetKeyID().ToString().c_str());
-    return true;
-}
-
-bool EnsureFirstHybridKey(CWallet* wallet)
-{
+    // ---- Commit atomically ----
+    const CKeyID keyID = mem.GetKeyID();
     LOCK(wallet->cs_wallet);
 
-    if (wallet->vchDefaultKey.IsValid())
+    if (wallet->mapHybridKeys.count(keyID)) {
+        printf("WARNING: hybrid key %s already loaded\n", keyID.ToString().c_str());
         return true;
-
-    printf("DEBUG: Creating first hybrid key\n");
-    CHybridKey hk;
-    GenerateHybridKey(hk);
-
-    CWalletDB walletdb(wallet->strWalletFile);
-    CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
-
-    walletdb.TxnBegin();
-    if (!walletdb.WriteHybridKey(hk.GetKeyID(), disk)) {
-        printf("ERROR: failed to write hybrid key\n");
-        walletdb.TxnAbort();
-        return false;
-    }
-    walletdb.TxnCommit();
-
-    if (!LoadHybridKey(wallet, disk)) {
-        printf("ERROR: failed to load hybrid key into memory\n");
-        return false;
     }
 
-    wallet->vchDefaultKey = hk.secpPub;
-    wallet->SetDefaultKey(hk.secpPub);
-    wallet->SetAddressBookName(hk.secpPub.GetID(), "");
+    wallet->mapHybridKeys.emplace(keyID, std::move(mem));
+    wallet->mapHybridSigners.emplace(keyID, std::move(signer));
 
-    printf("DEBUG: First hybrid key created successfully\n");
+    printf("Hybrid key %s loaded successfully\n", keyID.ToString().c_str());
     return true;
 }
 
-void NewHybridKeyPool(CWallet* wallet, int nSize)
-{
-    CWalletDB walletdb(wallet->strWalletFile);
-    LOCK(wallet->cs_wallet);
-
-    walletdb.TxnBegin();
-    for (int i = 0; i < nSize; ++i) {
-        CHybridKey hk;
-        GenerateHybridKey(hk);
-
-        CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
-        if (!walletdb.WriteHybridKey(hk.GetKeyID(), disk)) {
-            printf("ERROR: failed to write hybrid key to DB\n");
-            walletdb.TxnAbort();
-            return;
-        }
-
-        wallet->mapHybridKeys[hk.GetKeyID()] = std::move(hk);
-    }
-    walletdb.TxnCommit();
-
-    printf("Hybrid key pool of size %d created successfully\n", nSize);
-}
-
-// ---- Helper to bind hybrid key on demand ----
 bool CWallet::EnsureHybridKey(const CKeyID& keyID)
 {
     LOCK(cs_wallet);
-
-    if (mapHybridSigners.count(keyID))
-        return true;
+    if (mapHybridSigners.count(keyID)) return true;
 
     CKey key;
-    if (!GetKey(keyID, key))
-        return false;
+    if (!GetKey(keyID, key)) return false;
+
+    // ---- Stage 1: Build locally ----
+    CHybridKey hk;
+    std::unique_ptr<MLDSASigner> signer;
 
     try {
-        CHybridKey hk;
         hk.secpPriv = key.GetPrivKey();
         hk.secpPub  = key.GetPubKey();
         hk.nCreateTime = GetTime();
         hk.mldsaAlg = "p384_mldsa65";
 
         hk.mldsaSigner = MLDSASigner::GenerateNew();
-        if (!hk.mldsaSigner)
-            return false;
-
-        if (fFileBacked && !IsCrypted()) {
-            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
-            CWalletDB walletdb(strWalletFile);
-            walletdb.WriteHybridKey(keyID, disk);
-        }
+        if (!hk.mldsaSigner) return false;
 
         EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
+        if (!pkey) return false;
+
         EVP_PKEY_up_ref(pkey);
+        signer = std::make_unique<MLDSASigner>(pkey);
 
-        mapHybridSigners[keyID].reset(new MLDSASigner(pkey));
-        mapHybridKeys[keyID] = std::move(hk);
-        return true;
-
-    } catch (...) {
+    } catch (const std::exception& e) {
+        printf("EnsureHybridKey(%s) failed: %s\n", keyID.ToString().c_str(), e.what());
         return false;
     }
+
+    // ---- Stage 2: Persist to disk ----
+    if (fFileBacked && !IsCrypted()) {
+        try {
+            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
+            CWalletDB walletdb(strWalletFile);
+
+            if (!walletdb.WriteHybridKey(keyID, disk)) {
+                printf("EnsureHybridKey(%s) DB write failed\n", keyID.ToString().c_str());
+                return false;
+            }
+        } catch (const std::exception& e) {
+            printf("EnsureHybridKey(%s) DB exception: %s\n", keyID.ToString().c_str(), e.what());
+            return false;
+        }
+    }
+
+    // ---- Stage 3: Commit to memory ----
+    mapHybridKeys.emplace(keyID, std::move(hk));
+    mapHybridSigners.emplace(keyID, std::move(signer));
+
+    return true;
+}
+
+void NewHybridKeyPool(CWallet* wallet, int nSize)
+{
+    std::vector<std::pair<CKeyID, CHybridKey>> stagedKeys;
+    std::vector<CHybridKeyDisk> stagedDisks;
+
+    // Phase 1: Build locally
+    try {
+        for (int i = 0; i < nSize; ++i) {
+            CHybridKey hk;
+            GenerateHybridKey(hk);
+
+            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
+            stagedKeys.emplace_back(hk.GetKeyID(), std::move(hk));
+            stagedDisks.push_back(std::move(disk));
+        }
+    } catch (const std::exception& e) {
+        printf("ERROR: failed to generate hybrid key pool: %s\n", e.what());
+        return;
+    }
+
+    // Phase 2: Persist to DB
+    {
+        CWalletDB walletdb(wallet->strWalletFile);
+        walletdb.TxnBegin();
+        bool success = true;
+        for (const auto& disk : stagedDisks) {
+            if (!walletdb.WriteHybridKey(disk.secpPub.GetID(), disk)) {
+                printf("ERROR: failed to write hybrid key to DB\n");
+                success = false;
+                break;
+            }
+        }
+        if (!success) {
+            walletdb.TxnAbort();
+            return;
+        }
+        walletdb.TxnCommit();
+    }
+
+    // Phase 3: Commit to memory
+    {
+        LOCK(wallet->cs_wallet);
+        for (auto& kv : stagedKeys) {
+            wallet->mapHybridKeys[kv.first] = std::move(kv.second);
+        }
+    }
+
+    printf("Hybrid key pool of size %d created successfully\n", nSize);
 }
 
 void CWallet::LoadHybridKeys()
 {
     if (!fFileBacked) return;
-    LOCK(cs_wallet);
 
+    LOCK(cs_wallet);
     CWalletDB walletdb(strWalletFile);
     std::vector<CHybridKeyDisk> disks;
 

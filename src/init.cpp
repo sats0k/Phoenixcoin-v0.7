@@ -806,11 +806,6 @@ bool AppInit2()
     printf("%s", strErrors.str().c_str());
     printf(" wallet      %15" PRI64d "ms\n", GetTimeMillis() - nStart);
 
-    if (fFirstRun) {
-        EnsureFirstHybridKey(pwalletMain);
-        NewHybridKeyPool(pwalletMain, 100);
-    }
-
     RegisterWallet(pwalletMain);
 
     CBlockIndex *pindexRescan = pindexBest;
