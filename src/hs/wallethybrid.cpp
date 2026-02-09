@@ -256,3 +256,65 @@ void NewHybridKeyPool(CWallet* wallet, int nSize)
 
     printf("Hybrid key pool of size %d created successfully\n", nSize);
 }
+
+// ---- Helper to bind hybrid key on demand ----
+bool CWallet::EnsureHybridKey(const CKeyID& keyID)
+{
+    LOCK(cs_wallet);
+
+    if (mapHybridSigners.count(keyID))
+        return true;
+
+    CKey key;
+    if (!GetKey(keyID, key))
+        return false;
+
+    try {
+        CHybridKey hk;
+        hk.secpPriv = key.GetPrivKey();
+        hk.secpPub  = key.GetPubKey();
+        hk.nCreateTime = GetTime();
+        hk.mldsaAlg = "p384_mldsa65";
+
+        hk.mldsaSigner = MLDSASigner::GenerateNew();
+        if (!hk.mldsaSigner)
+            return false;
+
+        if (fFileBacked && !IsCrypted()) {
+            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
+            CWalletDB walletdb(strWalletFile);
+            walletdb.WriteHybridKey(keyID, disk);
+        }
+
+        EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
+        EVP_PKEY_up_ref(pkey);
+
+        mapHybridSigners[keyID].reset(new MLDSASigner(pkey));
+        mapHybridKeys[keyID] = std::move(hk);
+        return true;
+
+    } catch (...) {
+        return false;
+    }
+}
+
+void CWallet::LoadHybridKeys()
+{
+    if (!fFileBacked) return;
+    LOCK(cs_wallet);
+
+    CWalletDB walletdb(strWalletFile);
+    std::vector<CHybridKeyDisk> disks;
+
+    if (!walletdb.LoadAllHybridKeys(disks)) {
+        printf("WARNING: failed to load hybrid keys from DB\n");
+        return;
+    }
+
+    for (const auto& disk : disks) {
+        if (!LoadHybridKey(this, disk)) {
+            printf("WARNING: failed to load hybrid key %s\n",
+                   disk.secpPub.GetID().ToString().c_str());
+        }
+    }
+}

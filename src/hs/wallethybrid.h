@@ -20,6 +20,9 @@
 #include "hs/crypto_context.h"
 #include "hs/hybrid_signer.h"
 
+class CWallet;
+class CKeyID;
+
 // -----------------------------
 // Hybrid key versions
 // -----------------------------
@@ -84,8 +87,8 @@ public:
         READWRITE(secpPub);
 
         if (nVersion >= 2) {
-        READWRITE(mldsaAlg);
-        READWRITE(mldsaPrivKey);
+            READWRITE(mldsaAlg);
+            READWRITE(mldsaPrivKey);
         }
 
         READWRITE(hashChecksum);

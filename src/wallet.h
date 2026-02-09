@@ -91,6 +91,7 @@ public:
 
     bool EnsureHybridKey(const CKeyID& keyID);
     bool fFillingKeyPool;
+    void LoadHybridKeys();
 
     std::map<CKeyID, CHybridKey> mapHybridKeys;
     std::map<CKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
@@ -295,8 +296,6 @@ public:
     void SetBestChain(const CBlockLocator& loc);
 
     DBErrors LoadWallet(bool& fFirstRunRet);
-
-    void LoadHybridKeys();
 
     bool SetAddressBookName(const CTxDestination& address, const std::string& strName);
 
