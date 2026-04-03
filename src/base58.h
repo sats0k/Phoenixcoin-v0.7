@@ -22,7 +22,9 @@
 #include "key.h"
 #include "script.h"
 
- static const uint8_t MLDSA65_ADDRESS_VERSION = 0x3A;
+/* Address version constants */
+static constexpr uint8_t HYBRID_ADDRESS_VERSION = 0x3A;        // Mainnet P2PH
+static constexpr uint8_t HYBRID_ADDRESS_TEST_VERSION = 0x6A;   // Testnet P2PH
 
 /* P2PK and P2PKH addresses begin with 'P' */
 const uchar PUBKEY_ADDRESS_PREFIX = 0x38;
@@ -255,10 +257,14 @@ public:
     bool operator()(const CKeyID &id) const;
     bool operator()(const CScriptID &id) const;
     bool operator()(const CNoDestination &no) const;
-    bool operator()(const CMLDSA65PubKey &id) const {
-        // ML-DSA65 addresses are valid by default
-        return true;
+    bool operator()(const CHybridPubKey &key) const {
+        // Hybrid addresses are valid if both keys are valid
+        return key.IsValid();
     }
+    bool operator()(const CMLDSA65PubKey &id) const {
+        // Legacy ML-DSA65 - maintain backward compatibility
+         return true;
+     }
 };
 
 class CCoinAddress : public CBase58Data {
@@ -268,6 +274,8 @@ public:
         SCRIPT_ADDRESS = SCRIPT_ADDRESS_PREFIX,
         PUBKEY_ADDRESS_TEST = PUBKEY_ADDRESS_TEST_PREFIX,
         SCRIPT_ADDRESS_TEST = SCRIPT_ADDRESS_TEST_PREFIX,
+        HYBRID_ADDRESS = HYBRID_ADDRESS_VERSION,
+        HYBRID_ADDRESS_TEST = HYBRID_ADDRESS_TEST_VERSION,
     };
 
     bool Set(const CKeyID &id) {
@@ -282,6 +290,17 @@ public:
 
     bool Set(const CTxDestination &dest) {
         return(boost::apply_visitor(CCoinAddressVisitor(this), dest));
+    }
+
+    /* Hybrid address support */
+    bool Set(const CHybridPubKey& hybridKey) {
+        if (!hybridKey.IsValid()) {
+            return false;
+        }
+        std::vector<unsigned char> data = hybridKey.Serialize();
+        SetData(fTestNet ? HYBRID_ADDRESS_TEST_VERSION : HYBRID_ADDRESS_VERSION,
+                data.data(), data.size());
+        return true;
     }
 
     bool IsValid() const {
@@ -306,6 +325,15 @@ public:
             case(SCRIPT_ADDRESS_TEST):
                 fExpectTestNet = true;
                 nExpectedSize = 20;
+                break;
+            case(HYBRID_ADDRESS):
+                /* Hybrid ECDSA + ML-DSA public key */
+                fExpectTestNet = false;
+                nExpectedSize = CHybridPubKey::TOTAL_SIZE;  // 1985 bytes
+                break;
+            case(HYBRID_ADDRESS_TEST):
+                fExpectTestNet = true;
+                nExpectedSize = CHybridPubKey::TOTAL_SIZE;
                 break;
             default:
                 return(false);
@@ -332,6 +360,10 @@ public:
         SetString(pszAddress);
     }
 
+    CHybridPubKey GetHybridKey() const {
+        return CHybridPubKey::Deserialize(vchData);
+    }
+
     CTxDestination Get() const {
         if(!IsValid()) return(CNoDestination());
         switch(nVersion) {
@@ -347,6 +379,9 @@ public:
                 memcpy(&id, &vchData[0], 20);
                 return(CScriptID(id));
             }
+            case(HYBRID_ADDRESS):
+            case(HYBRID_ADDRESS_TEST):
+                return GetHybridKey();
         }
         return(CNoDestination());
     }

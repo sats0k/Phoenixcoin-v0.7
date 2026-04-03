@@ -142,7 +142,13 @@ const char* GetTxnOutputType(txnouttype t) {
     case TX_MULTISIG:
         return "multisig";
     case TX_MLDSA65_PUBKEY:
-        return "mldsa65";
+        return "mldsa65_pubkey";
+    case TX_HYBRID_PUBKEY:
+        return "hybrid_pubkey";
+    case TX_HYBRID_PUBKEYHASH:
+        return "hybrid_pubkeyhash";
+    case TX_HYBRID_MULTISIG:
+        return "hybrid_multisig";
     }
     return NULL;
 }
@@ -1181,6 +1187,24 @@ bool CheckSig(const std::vector<unsigned char>& vchSig,
 //
 bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsigned char> >& vSolutionsRet) {
 
+    // Check for hybrid pubkey pattern: OP_NOP4 [hybrid_pubkey] OP_CHECKSIG
+    if (scriptPubKey.size() > 2 && scriptPubKey[0] == OP_NOP4) {
+        typeRet = TX_HYBRID_PUBKEY;
+
+        // Extract the hybrid pubkey (should be ecdsa_key || ml_dsa_key)
+        opcodetype opcode;
+        std::vector<unsigned char> hybridKey;
+
+        CScript::const_iterator pc = scriptPubKey.begin() + 1;
+        if (scriptPubKey.GetOp(pc, opcode, hybridKey)) {
+            // Validate size: 33 bytes ECDSA + 1312 bytes ML-DSA
+            if (hybridKey.size() == 33 + 1312) {
+                vSolutionsRet.push_back(hybridKey);
+                return true;
+            }
+        }
+    }
+
     // In Solver() or similar pattern match
     if (scriptPubKey.size() > 2 && scriptPubKey[0] == OP_NOP4) {
         typeRet = TX_MLDSA65_PUBKEY;
@@ -1332,6 +1356,12 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
         return (SignN(vSolutions, keystore, hash, nHashType, scriptSigRet));
     case TX_MLDSA65_PUBKEY:
         return false;
+    case TX_HYBRID_PUBKEY:
+        return false;
+    case TX_HYBRID_PUBKEYHASH:
+        return false;
+    case TX_HYBRID_MULTISIG:
+        return false;
     }
     return(false);
 }
@@ -1351,6 +1381,12 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
     case TX_SCRIPTHASH:
         return 1; // doesn't include args needed by the script
     case TX_MLDSA65_PUBKEY:
+        return -1;
+    case TX_HYBRID_PUBKEY:
+        return -1;
+    case TX_HYBRID_PUBKEYHASH:
+        return -1;
+    case TX_HYBRID_MULTISIG:
         return -1;
     }
     return -1;
@@ -1449,6 +1485,12 @@ isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey) {
 
         case TX_MLDSA65_PUBKEY: {
             return MINE_NO;
+        case TX_HYBRID_PUBKEY:
+            return (MINE_SPENDABLE);
+        case TX_HYBRID_PUBKEYHASH:
+            return (MINE_SPENDABLE);
+        case TX_HYBRID_MULTISIG:
+            return (MINE_SPENDABLE);
         }
     }
 
@@ -1499,6 +1541,8 @@ public:
     void operator()(const CNoDestination &none) { }
 
     void operator()(const CMLDSA65PubKey &mlKey) { }
+
+    void operator()(const CHybridPubKey &hybridKey) { }
 };
 
 void ExtractAffectedKeys(const CKeyStore &keystore, const CScript &scriptPubKey,
@@ -1546,8 +1590,30 @@ bool ExtractDestinations(const CScript& scriptPubKey,
         addressRet.push_back(CScriptID(uint160(vSolutions[0])));
         nRequired = 1;
     }
-    else if (type == TX_MLDSA65_PUBKEY) {        // <--- added
-        addressRet.push_back(CMLDSA65PubKey{vSolutions[0]});
+    else if (type == TX_HYBRID_PUBKEY) {
+        // vSolutions[0] contains concatenated ECDSA (33 bytes) + ML-DSA (~1312 bytes) keys
+        const std::vector<unsigned char>& serialized = vSolutions[0];
+
+        // ECDSA secp256k1 compressed pubkey is 33 bytes
+        static constexpr size_t ECDSA_PUBKEY_SIZE = 33;
+        static constexpr size_t ML_DSA_65_PUBKEY_SIZE = 1312;  // ML-DSA-65 public key size
+
+        size_t expected_size = ECDSA_PUBKEY_SIZE + ML_DSA_65_PUBKEY_SIZE;
+        if (serialized.size() != expected_size) {
+            return false;
+        }
+
+        // Split into ECDSA and ML-DSA components
+        std::vector<unsigned char> ecdsaPubKey(
+            serialized.begin(),
+            serialized.begin() + ECDSA_PUBKEY_SIZE
+        );
+        std::vector<unsigned char> mlPubKey(
+            serialized.begin() + ECDSA_PUBKEY_SIZE,
+            serialized.end()
+        );
+
+        addressRet.push_back(CHybridPubKey(ecdsaPubKey, mlPubKey));
         nRequired = 1;
     }
     else {
@@ -1782,6 +1848,15 @@ static CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo,
         if (sigs1.size() >= sigs2.size())
             return PushAll(sigs1);
         return PushAll(sigs2);
+
+    // Hybrid signature types - use simple combination logic
+    case TX_HYBRID_PUBKEY:
+    case TX_HYBRID_PUBKEYHASH:
+    case TX_HYBRID_MULTISIG:
+        // For hybrid sigs, prefer the more complete signature set
+        if (sigs1.size() >= sigs2.size())
+            return PushAll(sigs1);
+        return PushAll(sigs2);
     }
     return CScript();
 }
@@ -1873,12 +1948,22 @@ public:
     }
 
 #define OP_MLDSA65 0xBA
-    bool operator()(const CMLDSA65PubKey &mlKey) const {
+    bool operator()(const CHybridPubKey &hybridKey) const {
         script->clear();
 
-        // Push ML-DSA opcode and pubkey
-        *script << static_cast<opcodetype>(OP_MLDSA65)
-                << mlKey.pubkey
+        // Get both ECDSA and ML-DSA public keys
+        // This assumes CHybridPubKey has methods to access both keys
+        std::vector<unsigned char> serialized;
+        serialized.insert(serialized.end(),
+                         hybridKey.ecdsaPubKey.begin(),
+                         hybridKey.ecdsaPubKey.end());
+        serialized.insert(serialized.end(),
+                         hybridKey.mldsaPubKey.begin(),
+                         hybridKey.mldsaPubKey.end());
+
+        // Build script: OP_NOP4 <serialized_key> OP_CHECKSIG
+        *script << static_cast<opcodetype>(OP_NOP4)
+                << serialized
                 << OP_CHECKSIG;
 
         return false; // Nonstandard output
@@ -1905,4 +1990,107 @@ CScript GetScriptForPubKeyHash(const CKeyID &keyID) {
     script << OP_DUP << OP_HASH160 << keyID << OP_EQUALVERIFY << OP_CHECKSIG;
 
     return(script);
+}
+
+// ============================================================================
+// HYBRID SCRIPT TEMPLATES & HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Create Pay-to-Hybrid-Public-Key (P2PH) script
+ *
+ * Script: [ECDSA_PUBKEY] [MLDSA_PUBKEY] OP_CHECKHYBRIDSIG
+ * Size: 1985 + 2 = 1987 bytes
+ */
+CScript GetScriptForHybridPubKey(const CHybridPubKey& hybridKey) {
+    if (!hybridKey.IsValid()) {
+        return CScript();  // Invalid
+    }
+
+    CScript script;
+    script << hybridKey.ecdsaPubKey
+           << hybridKey.mldsaPubKey
+           << OP_CHECKHYBRIDSIG;
+
+    return script;
+}
+
+/**
+ * Create Pay-to-Hybrid-Public-Key-Hash (P2HPKH) script
+ *
+ * Script: OP_DUP OP_HASH256 [HASH256] OP_EQUALVERIFY OP_CHECKHYBRIDSIG
+ * Size: 36 bytes
+ *
+ * Receiver publishes: HASH256(ecdsaPubKey || mldsaPubKey)
+ * Sender reveals full key when spending
+ */
+CScript GetScriptForHybridPubKeyHash(const uint256& hybridKeyHash) {
+    CScript script;
+    script << OP_DUP
+           << OP_HASH256
+           << hybridKeyHash
+           << OP_EQUALVERIFY
+           << OP_CHECKHYBRIDSIG;
+
+    return script;
+}
+
+/**
+ * Create Pay-to-Hybrid-Script-Hash (P2HSH) script
+ *
+ * Script: OP_HASH256 [SCRIPT_HASH] OP_EQUAL
+ * Size: 35 bytes
+ *
+ * Allows complex spending conditions (multisig, time-locks, etc.)
+ * with hybrid signatures
+ */
+CScript GetScriptForHybridScriptHash(const uint256& scriptHash) {
+    CScript script;
+    script << OP_HASH256
+           << scriptHash
+           << OP_EQUAL;
+
+    return script;
+}
+
+/**
+ * Create M-of-N Hybrid Multisignature script
+ *
+ * Script: OP_M [HYBRID_KEY_1] ... [HYBRID_KEY_N] OP_N OP_CHECKMULTIHYBRIDSIG
+ * Size: ~1987*N + 3 bytes
+ *
+ * Each signature must be valid for BOTH ECDSA and ML-DSA
+ */
+CScript GetScriptForHybridMultisig(int nRequired,
+                                  const std::vector<CHybridPubKey>& keys) {
+    CScript script;
+    script << CScript::EncodeOP_N(nRequired);
+
+    for (const auto& key : keys) {
+        if (!key.IsValid()) {
+            return CScript();  // Invalid input
+        }
+        script << key.Serialize();
+    }
+
+    script << CScript::EncodeOP_N(keys.size())
+           << OP_CHECKMULTIHYBRIDSIG;
+
+    return script;
+}
+
+/**
+ * Get transaction output type name for hybrid types
+ */
+const char* GetHybridOutputType(txnouttype t) {
+    switch(t) {
+        case TX_HYBRID_PUBKEY:
+            return "hybrid_pubkey";
+        case TX_HYBRID_PUBKEYHASH:
+            return "hybrid_pubkeyhash";
+        case TX_HYBRID_MULTISIG:
+            return "hybrid_multisig";
+        default:
+            return NULL;
+    }
 }

@@ -1604,6 +1604,16 @@ public:
         obj.push_back(Pair("ismine", false)); // change to true if the key is in the wallet
         return obj;
     }
+
+    Object operator()(const CHybridPubKey &hybridKey) const {
+        Object obj;
+        obj.push_back(Pair("address", "hybrid"));
+        obj.push_back(Pair("hybrid", true));
+        obj.push_back(Pair("isscript", false));
+        obj.push_back(Pair("pubkey", HexStr(hybridKey.ecdsaPubKey)));
+        obj.push_back(Pair("mldsapubkey", HexStr(hybridKey.mldsaPubKey)));
+        return obj;
+    }
 };
 
 Value validateaddress(const Array &params, bool fHelp) {
