@@ -232,6 +232,7 @@ HEADERS += src/qt/gui.h \
     src/ntp.h \
     src/hs/hybrid_signer.h \
     src/hs/wallethybrid.h \
+    src/hs/hybrid_script.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
 

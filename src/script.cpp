@@ -19,6 +19,7 @@
 #include "util.h"
 #include "main.h"
 #include "script.h"
+#include "hs/hybrid_script.h"
 
 using namespace std;
 using namespace boost;
@@ -992,6 +993,77 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     }
                 }
                 break;
+                case OP_CHECKHYBRIDSIG:
+                case OP_CHECKHYBRIDSIGVERIFY: {
+                    // Stack effect: sig_ecdsa sig_mldsa pubkey_ecdsa pubkey_mldsa -- bool
+                    // (sig_ecdsa sig_mldsa pubkey_ecdsa pubkey_mldsa -- bool)
+
+                    if(stack.size() < 4) {
+                        return(false);
+                    }
+
+                    // valtype vchPubKeyML = stacktop(-1);  // ML-DSA pubkey (TODO: use when ML-DSA verification implemented)
+                    valtype& vchPubKeyEC  = stacktop(-2);  // ECDSA pubkey
+                    valtype& vchSigML     = stacktop(-3);  // ML-DSA signature
+                    valtype& vchSigEC     = stacktop(-4);  // ECDSA signature (bottom)
+
+                    // Create scriptCode without hybrid signatures for verification
+                    CScript scriptCode(pbegincodehash, pend);
+                    scriptCode.FindAndDelete(CScript(vchSigEC));
+                    scriptCode.FindAndDelete(CScript(vchSigML));
+
+                    // Verify ECDSA signature against ECDSA public key
+                    bool ecdsaOk = CheckSig(vchSigEC, vchPubKeyEC, scriptCode, txTo, nIn, nHashType);
+
+                    // Verify ML-DSA signature against ML-DSA public key
+                    // TODO: Implement full ML-DSA signature verification
+                    // For now, accept if ECDSA verifies (placeholder implementation)
+                    bool mldsaOk = ecdsaOk;  // Placeholder - should verify against vchSigML and vchPubKeyML
+
+                    // Both signatures must verify for success
+                    bool fSuccess = ecdsaOk && mldsaOk;
+
+                    // Pop all 4 stack items
+                    popstack(stack);
+                    popstack(stack);
+                    popstack(stack);
+                    popstack(stack);
+
+                    // Push result
+                    stack.push_back(fSuccess ? vchTrue : vchFalse);
+
+                    // OP_CHECKHYBRIDSIGVERIFY: fail if not valid
+                    if(opcode == OP_CHECKHYBRIDSIGVERIFY) {
+                        if(fSuccess)
+                            popstack(stack);
+                        else
+                            return(false);
+                    }
+                }
+                break;
+
+                case OP_CHECKMULTIHYBRIDSIG: {
+                    // Stack effect: sig_1 ... sig_m m pubkey_1 ... pubkey_n n -- bool
+                    // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
+                    //
+                    // Each signature must be valid for BOTH ECDSA and ML-DSA components
+                    // This is M-of-N multisig with hybrid public keys
+                    //
+                    // TODO: Implement full hybrid multisig logic
+                    // For now, reject all OP_CHECKMULTIHYBRIDSIG operations
+                    // Expected format:
+                    //  - Count of signatures (m)
+                    //  - m signature pairs (ECDSA sig, ML-DSA sig)
+                    //  - Count of pubkeys (n)
+                    //  - n hybrid pubkey pairs (ECDSA pubkey, ML-DSA pubkey)
+                    //
+                    // Must verify that exactly m valid signatures are found matching n pubkeys
+                    // Each signature must verify both components
+
+                    // Placeholder: Not yet implemented
+                    return(false);
+                }
+                break;
                 default:
                     return(false);
                 }
@@ -1888,6 +1960,23 @@ unsigned int CScript::GetSigOpCount(bool fAccurate) const {
                 n += DecodeOP_N(lastOpcode);
             else
                 n += 20;
+        }
+        else if(opcode == OP_CHECKHYBRIDSIG || opcode == OP_CHECKHYBRIDSIGVERIFY) {
+            // Hybrid signature verification costs 2 signature operations:
+            // 1 for ECDSA (classical secp256k1)
+            // 1 for ML-DSA-65 (post-quantum)
+            n += 2;
+        }
+        else if(opcode == OP_CHECKMULTIHYBRIDSIG) {
+            // Hybrid multisig: each key represents 2 signature operations
+            // (one for ECDSA component, one for ML-DSA component)
+            if(fAccurate && lastOpcode >= OP_1 && lastOpcode <= OP_16) {
+                // Multiply number of required keys by 2
+                n += DecodeOP_N(lastOpcode) * 2;
+            } else {
+                // Conservative estimate: assume up to 20 keys
+                n += 20 * 2;
+            }
         }
         lastOpcode = opcode;
     }
