@@ -133,6 +133,7 @@ OBJS = \
     obj/hybrid_signer.o \
     obj/hybrid_verify.o \
     obj/wallethybrid.o \
+    obj/wallet_hybrid_address.o \
     obj/neoscrypt.o \
     obj/neoscrypt_asm.o \
     obj/ecies.o \
@@ -176,6 +177,9 @@ obj/hybrid_verify.o: hs/hybrid_verify.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 obj/wallethybrid.o: hs/wallethybrid.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/wallet_hybrid_address.o: hs/wallet_hybrid_address.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 phoenixcoind: $(OBJS:obj/%=obj/%)

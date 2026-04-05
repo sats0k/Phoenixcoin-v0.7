@@ -39,6 +39,34 @@ struct CHybridKeyMetadata
     )
 };
 
+// ============================================================================
+// HYBRID ADDRESS BOOK METADATA
+// ============================================================================
+
+/**
+ * Hybrid Address Entry
+ * Stores metadata about hybrid keys in address book
+ */
+struct CHybridAddressEntry
+{
+    int nVersion;                           // Entry version
+    int64 nCreateTime;                      // When address was created
+    std::string strLabel;                   // User label/name
+    std::string strPurpose;                 // "send", "receive", "change"
+
+    CHybridAddressEntry() : nVersion(1), nCreateTime(0) {}
+
+    CHybridAddressEntry(const std::string& label, const std::string& purpose = "receive")
+        : nVersion(1), nCreateTime(GetTime()), strLabel(label), strPurpose(purpose) {}
+
+    IMPLEMENT_SERIALIZE(
+        READWRITE(nVersion);
+        READWRITE(nCreateTime);
+        READWRITE(strLabel);
+        READWRITE(strPurpose);
+    )
+};
+
 /** Error statuses for the wallet database */
 enum DBErrors
 {
@@ -94,6 +122,57 @@ public:
     bool WriteHybridKey(const CKeyID &keyid, const CHybridKeyDisk &disk);
 
     bool WriteHybridKeyMetadata(const CKeyID& keyid, const CHybridKeyMetadata& meta);
+
+    // ---- Hybrid Address Book Functions ----
+
+    bool WriteHybridAddressEntry(const CKeyID& keyID, const CHybridAddressEntry& entry)
+    {
+        nWalletDBUpdated++;
+        return Write(std::make_pair(std::string("hybaddr"), keyID), entry);
+    }
+
+    bool EraseHybridAddressEntry(const CKeyID& keyID)
+    {
+        nWalletDBUpdated++;
+        return Erase(std::make_pair(std::string("hybaddr"), keyID));
+    }
+
+    bool ReadHybridAddressEntry(const CKeyID& keyID, CHybridAddressEntry& entry)
+    {
+        return Read(std::make_pair(std::string("hybaddr"), keyID), entry);
+    }
+
+    bool LoadAllHybridAddresses(std::map<CKeyID, CHybridAddressEntry>& mapAddresses)
+    {
+        mapAddresses.clear();
+        Dbc* pcursor = GetCursor();
+        if (!pcursor) return false;
+
+        while (true) {
+            CDataStream ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION);
+            int ret = ReadAtCursor(pcursor, ssKey, ssValue);
+            if (ret == DB_NOTFOUND) break;
+            if (ret != 0) {
+                pcursor->close();
+                return false;
+            }
+
+            std::string strType;
+            ssKey >> strType;
+            if (strType != "hybaddr") continue;
+
+            CKeyID keyID;
+            ssKey >> keyID;
+
+            CHybridAddressEntry entry;
+            ssValue >> entry;
+
+            mapAddresses[keyID] = entry;
+        }
+
+        pcursor->close();
+        return true;
+    }
 
     bool WriteName(const std::string& strAddress, const std::string& strName);
 

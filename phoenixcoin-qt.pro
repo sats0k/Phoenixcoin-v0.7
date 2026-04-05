@@ -309,6 +309,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/hs/hybrid_signer.cpp \
     src/hs/wallethybrid.cpp \
     src/hs/hybrid_verify.cpp \
+    src/hs/wallet_hybrid_address.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
 

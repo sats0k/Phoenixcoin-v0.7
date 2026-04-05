@@ -538,8 +538,12 @@ DBErrors CWalletDB::LoadWallet(CWallet *pwallet) {
     printf("Keys: %u plaintext, %u encrypted, %u with metadata, %u total\n",
            wss.nKeys, wss.nCKeys, wss.nKeyMeta, wss.nKeys + wss.nCKeys);
 
-    if((wss.nKeys + wss.nCKeys) != wss.nKeyMeta)
+    if((wss.nKeys + wss.nCKeys) != wss.nKeyMeta) {
       pwallet->UpdateTimeFirstKey();
+    }
+
+    // Load hybrid address book
+    pwallet->LoadHybridAddressBook();
 
     BOOST_FOREACH(uint256 hash, wss.vWalletUpgrade)
       WriteTx(hash, pwallet->mapWallet[hash]);

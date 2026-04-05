@@ -132,6 +132,16 @@ public:
 
     std::map<CTxDestination, std::string> mapAddressBook;
 
+    // Hybrid address book (stores names/labels for hybrid keys)
+    std::map<CKeyID, CHybridAddressEntry> mapHybridAddressBook;
+
+    // ---- Hybrid Address Book Functions ----
+    bool SetHybridAddressBookName(const CKeyID& keyID, const std::string& strName, const std::string& strPurpose = "receive");
+    bool GetHybridAddressBookName(const CKeyID& keyID, std::string& strNameOut) const;
+    bool DelHybridAddressBookName(const CKeyID& keyID);
+    std::vector<std::pair<CKeyID, std::string>> ListHybridAddresses() const;
+    void LoadHybridAddressBook();
+
     CPubKey vchDefaultKey;
     int64 nTimeFirstKey;
 
