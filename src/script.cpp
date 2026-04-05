@@ -1040,25 +1040,108 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                 break;
 
                 case OP_CHECKMULTIHYBRIDSIG: {
-                    // Stack effect: sig_1 ... sig_m m pubkey_1 ... pubkey_n n -- bool
-                    // ([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys -- bool)
+                    // Stack effect: [sig_ecdsa_1 sig_mldsa_1 ... sig_ecdsa_m sig_mldsa_m] m 
+                    //              [pubkey_ecdsa_1 pubkey_mldsa_1 ... pubkey_ecdsa_n pubkey_mldsa_n] n -- bool
                     //
-                    // Each signature must be valid for BOTH ECDSA and ML-DSA components
-                    // This is M-of-N multisig with hybrid public keys
-                    //
-                    // TODO: Implement full hybrid multisig logic
-                    // For now, reject all OP_CHECKMULTIHYBRIDSIG operations
-                    // Expected format:
-                    //  - Count of signatures (m)
-                    //  - m signature pairs (ECDSA sig, ML-DSA sig)
-                    //  - Count of pubkeys (n)
-                    //  - n hybrid pubkey pairs (ECDSA pubkey, ML-DSA pubkey)
-                    //
-                    // Must verify that exactly m valid signatures are found matching n pubkeys
-                    // Each signature must verify both components
+                    // Each signature pair (ECDSA + ML-DSA) must verify against ONE hybrid pubkey pair
+                    // This is M-of-N multisig with hybrid public keys where EACH signature is BOTH
+                    // an ECDSA and ML-DSA signature (domain-separated)
 
-                    // Placeholder: Not yet implemented
-                    return(false);
+                    int i = 1;
+                    if((int)stack.size() < i)
+                        return(false);
+
+                    // Get number of public keys (n)
+                    int nKeysCount = CastToBigNum(stacktop(-i)).getint();
+                    if(nKeysCount < 0 || nKeysCount > 20)  // Max 20 keys per standard script
+                        return(false);
+
+                    nOpCount += nKeysCount;
+                    if(nOpCount > 201)
+                        return(false);
+
+                    int ikey = ++i;
+                    i += nKeysCount * 2;  // Each hybrid pubkey is 2 items (ECDSA + ML-DSA)
+
+                    if((int)stack.size() < i)
+                        return(false);
+
+                    // Get number of signatures (m)
+                    int nSigsCount = CastToBigNum(stacktop(-i)).getint();
+                    if(nSigsCount < 0 || nSigsCount > nKeysCount)
+                        return(false);
+
+                    int isig = ++i;
+                    i += nSigsCount * 2;  // Each hybrid signature is 2 items (ECDSA + ML-DSA)
+
+                    if((int)stack.size() < i)
+                        return(false);
+
+                    // Create scriptCode without hybrid signatures for verification
+                    CScript scriptCode(pbegincodehash, pend);
+
+                    // Remove all signatures from scriptCode (both ECDSA and ML-DSA components)
+                    for(int k = 0; k < nSigsCount; k++) {
+                        valtype& vchSigEC = stacktop(-isig - (k * 2) - 1);  // ECDSA sig
+                        valtype& vchSigML = stacktop(-isig - (k * 2));      // ML-DSA sig
+                        scriptCode.FindAndDelete(CScript(vchSigEC));
+                        scriptCode.FindAndDelete(CScript(vchSigML));
+                    }
+
+                    // Track which pubkeys have been matched to signatures
+                    std::vector<bool> vfUsedKeys(nKeysCount, false);
+
+                    bool fSuccess = true;
+                    int nSigsMatched = 0;
+
+                    // For each signature, try to match it against an unused pubkey
+                    for(int k = 0; k < nSigsCount && fSuccess; k++) {
+                        valtype& vchSigEC = stacktop(-isig - (k * 2) - 1);  // ECDSA sig
+                        valtype& vchSigML = stacktop(-isig - (k * 2));      // ML-DSA sig
+
+                        bool fSigFound = false;
+
+                        // Try to match this signature against each unused pubkey
+                        for(int j = 0; j < nKeysCount && !fSigFound; j++) {
+                            if(vfUsedKeys[j])
+                                continue;  // Already matched a signature to this key
+
+                            valtype& vchPubKeyEC = stacktop(-ikey - (j * 2) - 1);  // ECDSA pubkey
+                            valtype& vchPubKeyML = stacktop(-ikey - (j * 2));      // ML-DSA pubkey
+
+                            // Try to verify this signature against this pubkey
+                            if(VerifyHybridSignature(
+                                    vchSigEC,
+                                    vchSigML,
+                                    vchPubKeyEC,
+                                    vchPubKeyML,
+                                    scriptCode,
+                                    txTo,
+                                    nIn,
+                                    nHashType)) {
+
+                                vfUsedKeys[j] = true;  // Mark this key as used
+                                fSigFound = true;
+                                nSigsMatched++;
+                            }
+                        }
+
+                        if(!fSigFound) {
+                            fSuccess = false;  // Failed to find a matching pubkey for this signature
+                        }
+                    }
+
+                    // Check that we matched the required number of signatures
+                    if(fSuccess && nSigsMatched != nSigsCount) {
+                        fSuccess = false;
+                    }
+
+                    // Pop all items from stack (signatures + sig count + pubkeys + pubkey count)
+                    while(i-- > 0)
+                        popstack(stack);
+
+                    // Push result
+                    stack.push_back(fSuccess ? vchTrue : vchFalse);
                 }
                 break;
                 default:
