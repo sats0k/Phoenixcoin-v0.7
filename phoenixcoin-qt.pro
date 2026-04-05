@@ -233,6 +233,7 @@ HEADERS += src/qt/gui.h \
     src/hs/hybrid_signer.h \
     src/hs/wallethybrid.h \
     src/hs/hybrid_script.h \
+    src/hs/hybrid_verify.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
 
@@ -307,6 +308,7 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/ntp.cpp \
     src/hs/hybrid_signer.cpp \
     src/hs/wallethybrid.cpp \
+    src/hs/hybrid_verify.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
 

@@ -131,6 +131,7 @@ OBJS = \
     obj/wallet.o \
     obj/walletdb.o \
     obj/hybrid_signer.o \
+    obj/hybrid_verify.o \
     obj/wallethybrid.o \
     obj/neoscrypt.o \
     obj/neoscrypt_asm.o \
@@ -169,6 +170,9 @@ obj/secure.o: ecies/secure.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 obj/hybrid_signer.o: hs/hybrid_signer.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/hybrid_verify.o: hs/hybrid_verify.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 obj/wallethybrid.o: hs/wallethybrid.cpp

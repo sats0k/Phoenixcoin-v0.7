@@ -20,6 +20,7 @@
 #include "main.h"
 #include "script.h"
 #include "hs/hybrid_script.h"
+#include "hs/hybrid_verify.h"
 
 using namespace std;
 using namespace boost;
@@ -27,7 +28,7 @@ using namespace boost;
 // ==================== Hybrid Helpers ====================
 
 // Build the "hybrid message" from the sighash
-static void BuildHybridMessage(const uint256& sighash, std::vector<unsigned char>& outMsg)
+void BuildHybridMessage(const uint256& sighash, std::vector<unsigned char>& outMsg)
 {
     // Copy the raw 32 bytes of the uint256
     outMsg.resize(32);
@@ -995,44 +996,40 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                 break;
                 case OP_CHECKHYBRIDSIG:
                 case OP_CHECKHYBRIDSIGVERIFY: {
-                    // Stack effect: sig_ecdsa sig_mldsa pubkey_ecdsa pubkey_mldsa -- bool
-                    // (sig_ecdsa sig_mldsa pubkey_ecdsa pubkey_mldsa -- bool)
+                    // Stack: sig_ecdsa sig_mldsa pubkey_ecdsa pubkey_mldsa -- bool
 
                     if(stack.size() < 4) {
                         return(false);
                     }
 
-                    // valtype vchPubKeyML = stacktop(-1);  // ML-DSA pubkey (TODO: use when ML-DSA verification implemented)
-                    valtype& vchPubKeyEC  = stacktop(-2);  // ECDSA pubkey
-                    valtype& vchSigML     = stacktop(-3);  // ML-DSA signature
-                    valtype& vchSigEC     = stacktop(-4);  // ECDSA signature (bottom)
+                    valtype& vchPubKeyML = stacktop(-1);
+                    valtype& vchPubKeyEC = stacktop(-2);
+                    valtype& vchSigML    = stacktop(-3);
+                    valtype& vchSigEC    = stacktop(-4);
 
-                    // Create scriptCode without hybrid signatures for verification
                     CScript scriptCode(pbegincodehash, pend);
                     scriptCode.FindAndDelete(CScript(vchSigEC));
                     scriptCode.FindAndDelete(CScript(vchSigML));
 
-                    // Verify ECDSA signature against ECDSA public key
-                    bool ecdsaOk = CheckSig(vchSigEC, vchPubKeyEC, scriptCode, txTo, nIn, nHashType);
+                    // Use the new hybrid verification implementation
+                    bool fSuccess = VerifyHybridSignature(
+                        vchSigEC,
+                        vchSigML,
+                        vchPubKeyEC,
+                        vchPubKeyML,
+                        scriptCode,
+                        txTo,
+                        nIn,
+                        nHashType
+                    );
 
-                    // Verify ML-DSA signature against ML-DSA public key
-                    // TODO: Implement full ML-DSA signature verification
-                    // For now, accept if ECDSA verifies (placeholder implementation)
-                    bool mldsaOk = ecdsaOk;  // Placeholder - should verify against vchSigML and vchPubKeyML
-
-                    // Both signatures must verify for success
-                    bool fSuccess = ecdsaOk && mldsaOk;
-
-                    // Pop all 4 stack items
                     popstack(stack);
                     popstack(stack);
                     popstack(stack);
                     popstack(stack);
 
-                    // Push result
                     stack.push_back(fSuccess ? vchTrue : vchFalse);
 
-                    // OP_CHECKHYBRIDSIGVERIFY: fail if not valid
                     if(opcode == OP_CHECKHYBRIDSIGVERIFY) {
                         if(fSuccess)
                             popstack(stack);
