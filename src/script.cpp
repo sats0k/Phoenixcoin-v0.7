@@ -21,6 +21,7 @@
 #include "script.h"
 #include "hs/hybrid_script.h"
 #include "hs/hybrid_verify.h"
+#include "hs/wallethybrid.h"
 
 using namespace std;
 using namespace boost;
@@ -1440,6 +1441,137 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
     return(false);
 }
 
+// Forward declaration (defined below)
+bool SignHybridTransaction(
+    const CKeyStore& keystore,
+    const CScript& scriptPubKey,
+    CTransaction& txTo,
+    unsigned int nIn,
+    int nHashType);
+
+// ===== IMPLEMENTATION OF HYBRID SIGNING =====
+
+bool SignHybridTransaction(
+    const CKeyStore& keystore,
+    const CScript& scriptPubKey,
+    CTransaction& txTo,
+    unsigned int nIn,
+    int nHashType)
+{
+    vector<vector<unsigned char>> solutions;
+    txnouttype scriptType;
+
+    if (!Solver(scriptPubKey, scriptType, solutions))
+        return false;
+
+    CScript scriptCode(scriptPubKey);
+    uint256 hash = SignatureHash(scriptCode, txTo, nIn, nHashType);
+    std::vector<unsigned char> hybridMsg;
+    BuildHybridMessage(hash, hybridMsg);
+
+    if (scriptType == TX_HYBRID_PUBKEY)
+    {
+        CPubKey ecdsaPubKey(solutions[0]);
+        CKeyID keyID = ecdsaPubKey.GetID();
+
+        CHybridKey hybridKey;
+        if (!keystore.GetHybridKey(keyID, hybridKey))
+            return false;
+
+        CKey ecdsaKey = hybridKey.GetCKey();
+        std::vector<unsigned char> ecdsaSig;
+        if (!ecdsaKey.Sign(hash, ecdsaSig))
+            return false;
+        ecdsaSig.push_back((unsigned char)nHashType);
+
+        std::vector<unsigned char> mldsaSig;
+        if (!hybridKey.mldsaSigner ||
+            !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+            return false;
+        mldsaSig.push_back((unsigned char)nHashType);
+
+        CScript scriptSig;
+        scriptSig << ecdsaSig << mldsaSig;
+        txTo.vin[nIn].scriptSig = scriptSig;
+        return true;
+    }
+
+    else if (scriptType == TX_HYBRID_PUBKEYHASH)
+    {
+        // vSolutions[0] = 32-byte hash, convert to uint160 by taking first 20 bytes
+        if (solutions[0].size() < 20)
+            return false;
+
+        // Create a vector from the first 20 bytes and pass to uint160 constructor
+        std::vector<unsigned char> hashBytes(solutions[0].begin(), solutions[0].begin() + 20);
+        uint160 keyHash160(hashBytes);
+
+        CHybridKey hybridKey;
+        if (!keystore.GetHybridKeyByHash(keyHash160, hybridKey))
+            return false;
+
+        CKey ecdsaKey = hybridKey.GetCKey();
+        std::vector<unsigned char> ecdsaSig;
+        if (!ecdsaKey.Sign(hash, ecdsaSig))
+            return false;
+        ecdsaSig.push_back((unsigned char)nHashType);
+
+        std::vector<unsigned char> mldsaSig;
+        if (!hybridKey.mldsaSigner ||
+            !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+            return false;
+        mldsaSig.push_back((unsigned char)nHashType);
+
+        CScript scriptSig;
+        scriptSig << ecdsaSig << mldsaSig;
+        txTo.vin[nIn].scriptSig = scriptSig;
+        return true;
+    }
+
+    else if (scriptType == TX_HYBRID_MULTISIG)
+    {
+        int nM = CScript::DecodeOP_N((opcodetype)solutions[0][0]);
+        int nN = CScript::DecodeOP_N((opcodetype)solutions[solutions.size() - 1][0]);
+
+        CScript scriptSig;
+        scriptSig << OP_0;
+
+        int signed_count = 0;
+        for (int i = 1; i <= nN && signed_count < nM; i++)
+        {
+            CPubKey pubKey(solutions[i]);
+            CKeyID keyID = pubKey.GetID();
+
+            CHybridKey hybridKey;
+            if (!keystore.GetHybridKey(keyID, hybridKey))
+                continue;
+
+            CKey ecdsaKey = hybridKey.GetCKey();
+            std::vector<unsigned char> ecdsaSig;
+            if (!ecdsaKey.Sign(hash, ecdsaSig))
+                continue;
+            ecdsaSig.push_back((unsigned char)nHashType);
+
+            std::vector<unsigned char> mldsaSig;
+            if (!hybridKey.mldsaSigner ||
+                !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+                continue;
+            mldsaSig.push_back((unsigned char)nHashType);
+
+            scriptSig << ecdsaSig << mldsaSig;
+            signed_count++;
+        }
+
+        if (signed_count < nM)
+            return false;
+
+        txTo.vin[nIn].scriptSig = scriptSig;
+        return true;
+    }
+
+    return false;
+}
+
 bool Sign1(const CKeyID& address, const CKeyStore& keystore, uint256 hash, int nHashType, CScript& scriptSigRet) {
     CKey key;
     if(!keystore.GetKey(address, key))
@@ -1500,12 +1632,18 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
         return (SignN(vSolutions, keystore, hash, nHashType, scriptSigRet));
     case TX_MLDSA65_PUBKEY:
         return false;
+
     case TX_HYBRID_PUBKEY:
-        return false;
     case TX_HYBRID_PUBKEYHASH:
-        return false;
     case TX_HYBRID_MULTISIG:
+    {
+        // Hybrid signing requires access to wallet/keystore to retrieve hybrid keys
+        // For now, return false as these require special handling at a higher level
+        // (in SignSignature which has access to both the transaction and keystore)
+        //
+        // TODO: These are handled in SignSignature() wrapper below
         return false;
+    }
     }
     return(false);
 }
@@ -1835,30 +1973,147 @@ bool VerifyScript(
     return true; // normal script types
 }
 
+// Helper function for hybrid transaction signing
+bool SignHybridTx(const CKeyStore& keystore, const CScript& scriptPubKey,
+                  CTransaction& txTo, unsigned int nIn, int nHashType,
+                  CScript& scriptSigRet)
+{
+    vector<vector<unsigned char>> solutions;
+    txnouttype scriptType;
+
+    if (!Solver(scriptPubKey, scriptType, solutions))
+        return false;
+
+    CScript scriptCode(scriptPubKey);
+    uint256 hash = SignatureHash(scriptCode, txTo, nIn, nHashType);
+    std::vector<unsigned char> hybridMsg;
+    BuildHybridMessage(hash, hybridMsg);
+
+    if (scriptType == TX_HYBRID_PUBKEY)
+    {
+        CPubKey ecdsaPubKey(solutions[0]);
+        CKeyID keyID = ecdsaPubKey.GetID();
+
+        CHybridKey hybridKey;
+        if (!keystore.GetHybridKey(keyID, hybridKey))
+            return false;
+
+        CKey ecdsaKey = hybridKey.GetCKey();
+        std::vector<unsigned char> ecdsaSig;
+        if (!ecdsaKey.Sign(hash, ecdsaSig))
+            return false;
+        ecdsaSig.push_back((unsigned char)nHashType);
+
+        std::vector<unsigned char> mldsaSig;
+        if (!hybridKey.mldsaSigner ||
+            !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+            return false;
+        mldsaSig.push_back((unsigned char)nHashType);
+
+        scriptSigRet << ecdsaSig << mldsaSig;
+        return true;
+    }
+
+    else if (scriptType == TX_HYBRID_PUBKEYHASH)
+    {
+        if (solutions[0].size() < 20)
+            return false;
+
+        std::vector<unsigned char> hashBytes(solutions[0].begin(), solutions[0].begin() + 20);
+        uint160 keyHash160(hashBytes);
+
+        CHybridKey hybridKey;
+        if (!keystore.GetHybridKeyByHash(keyHash160, hybridKey))
+            return false;
+
+        CKey ecdsaKey = hybridKey.GetCKey();
+        std::vector<unsigned char> ecdsaSig;
+        if (!ecdsaKey.Sign(hash, ecdsaSig))
+            return false;
+        ecdsaSig.push_back((unsigned char)nHashType);
+
+        std::vector<unsigned char> mldsaSig;
+        if (!hybridKey.mldsaSigner ||
+            !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+            return false;
+        mldsaSig.push_back((unsigned char)nHashType);
+
+        scriptSigRet << ecdsaSig << mldsaSig;
+        return true;
+    }
+
+    else if (scriptType == TX_HYBRID_MULTISIG)
+    {
+        int nM = CScript::DecodeOP_N((opcodetype)solutions[0][0]);
+        int nN = CScript::DecodeOP_N((opcodetype)solutions[solutions.size() - 1][0]);
+
+        scriptSigRet << OP_0;
+
+        int signed_count = 0;
+        for (int i = 1; i <= nN && signed_count < nM; i++)
+        {
+            CPubKey pubKey(solutions[i]);
+            CKeyID keyID = pubKey.GetID();
+
+            CHybridKey hybridKey;
+            if (!keystore.GetHybridKey(keyID, hybridKey))
+                continue;
+
+            CKey ecdsaKey = hybridKey.GetCKey();
+            std::vector<unsigned char> ecdsaSig;
+            if (!ecdsaKey.Sign(hash, ecdsaSig))
+                continue;
+            ecdsaSig.push_back((unsigned char)nHashType);
+
+            std::vector<unsigned char> mldsaSig;
+            if (!hybridKey.mldsaSigner ||
+                !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+                continue;
+            mldsaSig.push_back((unsigned char)nHashType);
+
+            scriptSigRet << ecdsaSig << mldsaSig;
+            signed_count++;
+        }
+
+        return signed_count >= nM;
+    }
+
+    return false;
+}
+
 bool SignSignature(const CKeyStore &keystore, const CScript& fromPubKey, CTransaction& txTo, unsigned int nIn, int nHashType) {
     assert(nIn < txTo.vin.size());
     CTxIn& txin = txTo.vin[nIn];
-    // Leave out the signature from the hash, since a signature can't sign itself.
-    // The checksig op will also drop the signatures from its hash.
     uint256 hash = SignatureHash(fromPubKey, txTo, nIn, nHashType);
+
     txnouttype whichType;
-    if(!Solver(keystore, fromPubKey, hash, nHashType, txin.scriptSig, whichType))
+    vector<valtype> vSolutions;
+
+    if (!Solver(fromPubKey, whichType, vSolutions))
+        return false;
+
+    if (whichType == TX_HYBRID_PUBKEY ||
+        whichType == TX_HYBRID_PUBKEYHASH ||
+        whichType == TX_HYBRID_MULTISIG)
+    {
+        return SignHybridTx(keystore, fromPubKey, txTo, nIn, nHashType, txin.scriptSig);
+    }
+
+    CScript scriptSigRet;
+    if(!Solver(keystore, fromPubKey, hash, nHashType, scriptSigRet, whichType))
         return(false);
     if(whichType == TX_SCRIPTHASH) {
-        // Solver returns the subscript that need to be evaluated;
-        // the final scriptSig is the signatures from that
-        // and then the serialized subscript:
-        CScript subscript = txin.scriptSig;
-        // Recompute txn hash using subscript in place of scriptPubKey:
+        CScript subscript = scriptSigRet;
         uint256 hash2 = SignatureHash(subscript, txTo, nIn, nHashType);
         txnouttype subType;
         bool fSolved =
-            Solver(keystore, subscript, hash2, nHashType, txin.scriptSig, subType) && subType != TX_SCRIPTHASH;
-        // Append serialized subscript whether or not it is completely signed:
+            Solver(keystore, subscript, hash2, nHashType, scriptSigRet, subType) && subType != TX_SCRIPTHASH;
         txin.scriptSig << static_cast<valtype>(subscript);
         if(!fSolved) return(false);
+    } else {
+        txin.scriptSig = scriptSigRet;
     }
-    // Test solution
+
     return VerifyScript(txin.scriptSig, fromPubKey, txTo, nIn, true, 0);
 }
 

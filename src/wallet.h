@@ -96,6 +96,11 @@ public:
     std::map<CKeyID, CHybridKey> mapHybridKeys;
     std::map<CKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
 
+    // ===== Hybrid key access methods (override from CKeyStore) =====
+    bool HaveHybridKey(const CKeyID &address) const;
+    bool GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const;
+    bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const;
+
     bool fFileBacked;
     std::string strWalletFile;
 

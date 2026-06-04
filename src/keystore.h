@@ -17,6 +17,8 @@
 #include "crypter.h"
 #include "sync.h"
 
+struct CHybridKey;
+
 class CScript;
 
 class CNoDestination {
@@ -133,6 +135,22 @@ public:
             return false;
         vchSecret = key.GetSecret(fCompressed);
         return true;
+    }
+
+    // ===== Hybrid key support (forward declared in wallethybrid.h) =====
+    virtual bool HaveHybridKey(const CKeyID &address) const
+    {
+        return false;
+    }
+
+    virtual bool GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const
+    {
+        return false;
+    }
+
+    virtual bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const
+    {
+        return false;
     }
 };
 

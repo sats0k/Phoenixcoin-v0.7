@@ -16,7 +16,6 @@
 #include "serialize.h"
 #include "uint256.h"
 #include "sync.h"
-#include "walletdb.h"
 #include "hs/crypto_context.h"
 #include "hs/hybrid_signer.h"
 

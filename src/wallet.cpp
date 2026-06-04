@@ -29,6 +29,50 @@ struct CompareValueOnly
     }
 };
 
+bool CWallet::HaveHybridKey(const CKeyID &address) const
+{
+    LOCK(cs_wallet);
+    return mapHybridKeys.count(address) > 0;
+}
+
+bool CWallet::GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const
+{
+    LOCK(cs_wallet);
+    auto it = mapHybridKeys.find(address);
+    if (it != mapHybridKeys.end())
+    {
+        // Can't copy unique_ptr, so construct/move instead
+        keyOut.secpPriv = it->second.secpPriv;
+        keyOut.secpPub = it->second.secpPub;
+        keyOut.mldsaAlg = it->second.mldsaAlg;
+        keyOut.nCreateTime = it->second.nCreateTime;
+
+        // For the unique_ptr, we need to clone the signer or use a different approach
+        // Option 1: Don't copy the signer, just mark it as needing to be recreated
+        // Option 2: Make mapHybridSigners separate and reference it
+        return true;
+    }
+    return false;
+}
+
+bool CWallet::GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const
+{
+    LOCK(cs_wallet);
+    for (const auto& pair : mapHybridKeys)
+    {
+        if (Hash160(pair.second.secpPub.Raw()) == keyHash)
+        {
+            // Copy the copyable parts
+            keyOut.secpPriv = pair.second.secpPriv;
+            keyOut.secpPub = pair.second.secpPub;
+            keyOut.mldsaAlg = pair.second.mldsaAlg;
+            keyOut.nCreateTime = pair.second.nCreateTime;
+            return true;
+        }
+    }
+    return false;
+}
+
 CPubKey CWallet::GenerateNewKey()
 {
     bool fCompressed = CanSupportFeature(FEATURE_COMPRPUBKEY); // default to compressed public keys if we want 0.6.0 wallets
