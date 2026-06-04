@@ -81,6 +81,7 @@ enum
         const bool fWrite = true;               \
         const bool fRead = false;               \
         unsigned int nSerSize = 0;              \
+        (void)nSerSize;                         \
         assert(fGetSize||fWrite||fRead); /* suppress warning */ \
         {statements}                            \
     }                                           \
@@ -92,6 +93,7 @@ enum
         const bool fWrite = false;              \
         const bool fRead = true;                \
         unsigned int nSerSize = 0;              \
+        (void)nSerSize;                         \
         assert(fGetSize||fWrite||fRead); /* suppress warning */ \
         {statements}                            \
     }
