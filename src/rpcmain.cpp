@@ -322,6 +322,9 @@ static const CRPCCommand vRPCCommands[] =
     { "encryptdata",            &encryptdata,            false,  false },
     { "decryptdata",            &decryptdata,            false,  false },
     { "dumphybridkey",          &dumphybridkey,          false,  false },
+    { "gethybridaddress",       &gethybridaddress,       false,  false },
+    { "listhybridaddresses",    &listhybridaddresses,    false,  false },
+    { "gethybridkey",           &gethybridkey,           false,  false },
 };
 
 CRPCTable::CRPCTable()
