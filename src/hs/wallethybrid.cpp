@@ -145,6 +145,9 @@ bool LoadHybridKey(CWallet* wallet, const CHybridKeyDisk& disk)
         mem.mldsaSigner = std::make_unique<MLDSASigner>(pkey);
         signer = std::make_unique<MLDSASigner>(pkey);
 
+        if (!ValidateHybridKey(mem))
+            throw std::runtime_error("Hybrid key validation failed");
+
     } catch (const std::exception& e) {
         printf("LoadHybridKey failed: %s\n", e.what());
         return false;
@@ -186,6 +189,9 @@ bool CWallet::EnsureHybridKey(const CKeyID& keyID)
 
         hk.mldsaSigner = MLDSASigner::GenerateNew();
         if (!hk.mldsaSigner) return false;
+
+        if (!ValidateHybridKey(hk))
+            return false;
 
         EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
         if (!pkey) return false;
@@ -290,4 +296,56 @@ void CWallet::LoadHybridKeys()
                    disk.secpPub.GetID().ToString().c_str());
         }
     }
+}
+
+// ============================================================================
+// HYBRID KEY VALIDATION
+// ============================================================================
+
+bool ValidateHybridKey(const CHybridKey& hk)
+{
+    // ECDSA private/public key must exist
+    if (hk.secpPriv.empty())
+        return false;
+
+    if (!hk.secpPub.IsValid())
+        return false;
+
+    // Phoenixcoin uses compressed public keys only
+    if (hk.secpPub.Raw().size() != 33)
+        return false;
+
+    // Algorithm string
+    if (hk.mldsaAlg != "p384_mldsa65")
+        return false;
+
+    // ML-DSA signer
+    if (!hk.mldsaSigner)
+        return false;
+
+    EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
+    if (!pkey)
+        return false;
+
+    // Verify ECDSA key pair
+    try
+    {
+        CKey key = hk.GetCKey();
+
+        if (!key.IsValid())
+            return false;
+
+        if (key.GetPubKey() != hk.secpPub)
+            return false;
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    // Creation time
+    if (hk.nCreateTime <= 0)
+        return false;
+
+    return true;
 }

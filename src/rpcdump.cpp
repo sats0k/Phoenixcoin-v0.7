@@ -407,6 +407,8 @@ Value gethybridaddress(const Array& params, bool fHelp) {
     CHybridKey hybridKey;
     try {
         GenerateHybridKey(hybridKey);
+        if (!ValidateHybridKey(hybridKey))
+            throw std::runtime_error("Generated invalid hybrid key");
     } catch (std::exception& e) {
         throw JSONRPCError(
             RPC_WALLET_ERROR,
