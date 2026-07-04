@@ -47,9 +47,11 @@ bool CWallet::GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const
         keyOut.mldsaAlg = it->second.mldsaAlg;
         keyOut.nCreateTime = it->second.nCreateTime;
 
-        // For the unique_ptr, we need to clone the signer or use a different approach
-        // Option 1: Don't copy the signer, just mark it as needing to be recreated
-        // Option 2: Make mapHybridSigners separate and reference it
+        keyOut.mldsaSigner = GetSignerFromKey(it->second);
+
+        if (!keyOut.mldsaSigner)
+            return false;
+
         return true;
     }
     return false;
@@ -67,6 +69,12 @@ bool CWallet::GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) con
             keyOut.secpPub = pair.second.secpPub;
             keyOut.mldsaAlg = pair.second.mldsaAlg;
             keyOut.nCreateTime = pair.second.nCreateTime;
+
+            keyOut.mldsaSigner = GetSignerFromKey(pair.second);
+
+            if (!keyOut.mldsaSigner)
+                return false;
+
             return true;
         }
     }
