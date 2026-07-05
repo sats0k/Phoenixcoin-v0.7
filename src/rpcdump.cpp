@@ -415,6 +415,13 @@ Value gethybridaddress(const Array& params, bool fHelp) {
             string("Error: Failed to generate hybrid key: ") + e.what());
     }
 
+    CKey ecdsaKey = hybridKey.GetCKey();
+
+    if (!pwalletMain->AddKey(ecdsaKey)) {
+        throw JSONRPCError(RPC_WALLET_ERROR,
+                           "Failed to add ECDSA key to wallet");
+    }
+
     CKeyID keyID = hybridKey.GetKeyID();
     CPubKey ecdsaPubKey = hybridKey.secpPub;
 
@@ -445,15 +452,9 @@ Value gethybridaddress(const Array& params, bool fHelp) {
                 "Error: Failed to write hybrid key to database.");
     }
 
-    // Build hybrid script - use ECDSA pubkey for address
-    CScript scriptPubKey;
-    scriptPubKey << ecdsaPubKey << OP_CHECKSIG;
-
-    // Generate address from script - convert script to vector for Hash160
-    vector<unsigned char> scriptVec(scriptPubKey.begin(), scriptPubKey.end());
-    uint160 scriptHash = Hash160(scriptVec);
-    CScriptID scriptID(scriptHash);
-    CCoinAddress address(scriptID);
+    // Native hybrid address uses the ECDSA KeyID.
+    // The wallet binds this KeyID to both the ECDSA and ML-DSA keys.
+    CCoinAddress address(keyID);
     string strAddress = address.ToString();
 
     // Set label if provided
@@ -505,14 +506,8 @@ Value listhybridaddresses(const Array& params, bool fHelp) {
             if (!fIncludeEmpty && strLabel.empty())
                 continue;  // Skip unlabeled addresses if not requested
 
-            // Build address from script
-            CScript scriptPubKey;
-            scriptPubKey << hybridKey.secpPub << OP_CHECKSIG;
-            vector<unsigned char> scriptVec(scriptPubKey.begin(),
-                                            scriptPubKey.end());
-            uint160 scriptHash = Hash160(scriptVec);
-            CScriptID scriptID(scriptHash);
-            CCoinAddress address(scriptID);
+            // Native hybrid addresses use the ECDSA KeyID
+            CCoinAddress address(keyID);
 
             // Build result object
             Object obj;
@@ -548,34 +543,25 @@ Value gethybridkey(const Array& params, bool fHelp) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
                            "Invalid Bitcoin address");
 
-    if (!address.IsScript())
+    CKeyID keyID;
+    if (!address.GetKeyID(keyID))
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-                           "Address is not a script address");
+                           "Address is not a key address");
 
-    CScriptID scriptID = get<CScriptID>(address.Get());
+    const CHybridKey* pHybridKey = NULL;
 
-    // Find hybrid key in wallet
-    const CHybridKey* pHybridKey = nullptr;
-    CKeyID foundKeyID;
     {
         LOCK(pwalletMain->cs_wallet);
 
-        for (map<CKeyID, CHybridKey>::const_iterator it =
-                 pwalletMain->mapHybridKeys.begin();
-             it != pwalletMain->mapHybridKeys.end(); ++it) {
-            CScript testScript;
-            testScript << it->second.secpPub << OP_CHECKSIG;
-            vector<unsigned char> scriptVec(testScript.begin(),
-                                            testScript.end());
-            uint160 testHash = Hash160(scriptVec);
-            CScriptID testID(testHash);
+        map<CKeyID, CHybridKey>::const_iterator it =
+            pwalletMain->mapHybridKeys.find(keyID);
 
-            if (testID == scriptID) {
-                pHybridKey = &(it->second);
-                foundKeyID = it->first;
-                break;
-            }
-        }
+        if (it == pwalletMain->mapHybridKeys.end())
+            throw JSONRPCError(
+                RPC_INVALID_ADDRESS_OR_KEY,
+                "Address does not correspond to a hybrid key in this wallet");
+
+        pHybridKey = &it->second;
     }
 
     if (!pHybridKey)
@@ -588,7 +574,7 @@ Value gethybridkey(const Array& params, bool fHelp) {
     printf("Hybrid signers: %u\n",
            (unsigned)pwalletMain->mapHybridSigners.size());
 
-    if (!pwalletMain->mapHybridSigners.count(foundKeyID)) {
+    if (!pwalletMain->mapHybridSigners.count(keyID)) {
         printf("Signer NOT found\n");
     } else {
         printf("Signer found\n");
@@ -624,10 +610,9 @@ Value gethybridkey(const Array& params, bool fHelp) {
     // Add label if exists
     {
         LOCK(pwalletMain->cs_wallet);
-        if (pwalletMain->mapHybridAddressBook.count(foundKeyID))
-            result.push_back(
-                Pair("label",
-                     pwalletMain->mapHybridAddressBook[foundKeyID].strLabel));
+        if (pwalletMain->mapHybridAddressBook.count(keyID))
+            result.push_back(Pair(
+                "label", pwalletMain->mapHybridAddressBook[keyID].strLabel));
     }
 
     return result;
