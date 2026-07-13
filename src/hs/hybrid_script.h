@@ -20,9 +20,9 @@
 
 /**
  * ML-DSA-65 Public Key Size
- * NIST FIPS 204 compliance: ML-DSA-65 produces public keys of 1312 bytes
+ * NIST FIPS 204 compliance: ML-DSA-65 produces public keys of 1952 bytes
  */
-static constexpr size_t ML_DSA_65_PUBKEY_SIZE = 1312;
+static constexpr size_t ML_DSA_65_PUBKEY_SIZE = 1952;
 
 /**
  * ML-DSA-65 Signature Size
@@ -44,7 +44,7 @@ static constexpr size_t ECDSA_SIG_MAX_SIZE = 73;
 
 /**
  * Hybrid Public Key Total Size
- * ECDSA pubkey (33 bytes) + ML-DSA pubkey (1312 bytes) = 1345 bytes
+ * ECDSA pubkey (33 bytes) + ML-DSA pubkey (1952 bytes) = 1985 bytes
  */
 static constexpr size_t HYBRID_PUBKEY_SIZE = ECDSA_PUBKEY_SIZE + ML_DSA_65_PUBKEY_SIZE;
 
@@ -86,7 +86,7 @@ static constexpr size_t HYBRID_SIG_MAX_SIZE = ECDSA_SIG_MAX_SIZE + ML_DSA_65_SIG
 /**
  * Validate hybrid public key format
  * 
- * @param hybridPubKey Combined ECDSA (33 bytes) + ML-DSA (1312 bytes) public key
+ * @param hybridPubKey Combined ECDSA (33 bytes) + ML-DSA (1952 bytes) public key
  * @return true if size is exactly 1345 bytes, false otherwise
  */
 inline bool ValidateHybridPubKey(const std::vector<unsigned char>& hybridPubKey) {
@@ -96,9 +96,9 @@ inline bool ValidateHybridPubKey(const std::vector<unsigned char>& hybridPubKey)
 /**
  * Split hybrid public key into ECDSA and ML-DSA components
  * 
- * @param hybridPubKey Combined ECDSA + ML-DSA public key (1345 bytes)
+ * @param hybridPubKey Combined ECDSA + ML-DSA public key (1985 bytes)
  * @param ecdsaPubKey Output: ECDSA secp256k1 public key (33 bytes)
- * @param mldsaPubKey Output: ML-DSA-65 public key (1312 bytes)
+ * @param mldsaPubKey Output: ML-DSA-65 public key (1952 bytes)
  * @return true if split successful, false if input size invalid
  */
 inline bool SplitHybridPubKey(
@@ -127,7 +127,7 @@ inline bool SplitHybridPubKey(
  * Combine ECDSA and ML-DSA public keys into hybrid format
  * 
  * @param ecdsaPubKey ECDSA secp256k1 public key (33 bytes)
- * @param mldsaPubKey ML-DSA-65 public key (1312 bytes)
+ * @param mldsaPubKey ML-DSA-65 public key (1952 bytes)
  * @param hybridPubKey Output: Combined hybrid public key
  * @return true if sizes are valid and combining succeeds
  */

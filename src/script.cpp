@@ -1342,8 +1342,8 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
 
         CScript::const_iterator pc = scriptPubKey.begin() + 1;
         if (scriptPubKey.GetOp(pc, opcode, hybridKey)) {
-            // Validate size: 33 bytes ECDSA + 1312 bytes ML-DSA
-            if (hybridKey.size() == 33 + 1312) {
+            // Validate size: 33 bytes ECDSA + 1952 bytes ML-DSA
+            if (hybridKey.size() == 33 + 1952) {
                 vSolutionsRet.push_back(hybridKey);
                 return true;
             }
@@ -1873,12 +1873,12 @@ bool ExtractDestinations(const CScript& scriptPubKey,
         nRequired = 1;
     }
     else if (type == TX_HYBRID_PUBKEY) {
-        // vSolutions[0] contains concatenated ECDSA (33 bytes) + ML-DSA (~1312 bytes) keys
+        // vSolutions[0] contains concatenated ECDSA (33 bytes) + ML-DSA (~1952 bytes) keys
         const std::vector<unsigned char>& serialized = vSolutions[0];
 
         // ECDSA secp256k1 compressed pubkey is 33 bytes
         static constexpr size_t ECDSA_PUBKEY_SIZE = 33;
-        static constexpr size_t ML_DSA_65_PUBKEY_SIZE = 1312;  // ML-DSA-65 public key size
+        static constexpr size_t ML_DSA_65_PUBKEY_SIZE = 1952;  // ML-DSA-65 public key size
 
         size_t expected_size = ECDSA_PUBKEY_SIZE + ML_DSA_65_PUBKEY_SIZE;
         if (serialized.size() != expected_size) {
