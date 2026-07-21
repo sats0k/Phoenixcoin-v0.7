@@ -119,30 +119,30 @@ private:
 public:
     bool LoadAllHybridKeys(std::vector<CHybridKeyDisk> &vKeys);
 
-    bool WriteHybridKey(const CKeyID &keyid, const CHybridKeyDisk &disk);
+    bool WriteHybridKey(const CHybridKeyID &keyID, const CHybridKeyDisk &disk);
 
-    bool WriteHybridKeyMetadata(const CKeyID& keyid, const CHybridKeyMetadata& meta);
+    bool WriteHybridKeyMetadata(const CHybridKeyID& keyid, const CHybridKeyMetadata& meta);
 
     // ---- Hybrid Address Book Functions ----
 
-    bool WriteHybridAddressEntry(const CKeyID& keyID, const CHybridAddressEntry& entry)
+    bool WriteHybridAddressEntry(const CHybridKeyID& keyID, const CHybridAddressEntry& entry)
     {
         nWalletDBUpdated++;
         return Write(std::make_pair(std::string("hybaddr"), keyID), entry);
     }
 
-    bool EraseHybridAddressEntry(const CKeyID& keyID)
+    bool EraseHybridAddressEntry(const CHybridKeyID& keyID)
     {
         nWalletDBUpdated++;
         return Erase(std::make_pair(std::string("hybaddr"), keyID));
     }
 
-    bool ReadHybridAddressEntry(const CKeyID& keyID, CHybridAddressEntry& entry)
+    bool ReadHybridAddressEntry(const CHybridKeyID& keyID, CHybridAddressEntry& entry)
     {
         return Read(std::make_pair(std::string("hybaddr"), keyID), entry);
     }
 
-    bool LoadAllHybridAddresses(std::map<CKeyID, CHybridAddressEntry>& mapAddresses)
+    bool LoadAllHybridAddresses(std::map<CHybridKeyID, CHybridAddressEntry>& mapAddresses)
     {
         mapAddresses.clear();
         Dbc* pcursor = GetCursor();
@@ -161,7 +161,7 @@ public:
             ssKey >> strType;
             if (strType != "hybaddr") continue;
 
-            CKeyID keyID;
+            CHybridKeyID keyID;
             ssKey >> keyID;
 
             CHybridAddressEntry entry;

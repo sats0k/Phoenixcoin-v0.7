@@ -26,9 +26,9 @@ static constexpr size_t ML_DSA_65_PUBKEY_SIZE = 1952;
 
 /**
  * ML-DSA-65 Signature Size
- * NIST FIPS 204 compliance: ML-DSA-65 signatures are 4595 bytes
+ * NIST FIPS 204 compliance: ML-DSA-65 signatures are 3310 bytes
  */
-static constexpr size_t ML_DSA_65_SIG_SIZE = 4595;
+static constexpr size_t ML_DSA_65_SIG_SIZE = 3310;
 
 /**
  * ECDSA secp256k1 Public Key Size (Compressed)
@@ -50,7 +50,7 @@ static constexpr size_t HYBRID_PUBKEY_SIZE = ECDSA_PUBKEY_SIZE + ML_DSA_65_PUBKE
 
 /**
  * Hybrid Signature Total Size
- * ECDSA sig (max 73 bytes) + ML-DSA sig (4595 bytes) = max 4668 bytes
+ * ECDSA sig (max 73 bytes) + ML-DSA sig (3310 bytes) = max 3383 bytes
  */
 static constexpr size_t HYBRID_SIG_MAX_SIZE = ECDSA_SIG_MAX_SIZE + ML_DSA_65_SIG_SIZE;
 
@@ -87,7 +87,7 @@ static constexpr size_t HYBRID_SIG_MAX_SIZE = ECDSA_SIG_MAX_SIZE + ML_DSA_65_SIG
  * Validate hybrid public key format
  * 
  * @param hybridPubKey Combined ECDSA (33 bytes) + ML-DSA (1952 bytes) public key
- * @return true if size is exactly 1345 bytes, false otherwise
+ * @return true if size is exactly 1985 bytes, false otherwise
  */
 inline bool ValidateHybridPubKey(const std::vector<unsigned char>& hybridPubKey) {
     return hybridPubKey.size() == HYBRID_PUBKEY_SIZE;
@@ -155,8 +155,8 @@ inline bool CombineHybridPubKey(
  * @return true if size is within valid range, false otherwise
  */
 inline bool ValidateHybridSignature(const std::vector<unsigned char>& hybridSig) {
-    // Minimum: smallest ECDSA sig (71 bytes) + ML-DSA sig (4595 bytes) = 4666 bytes
-    // Maximum: largest ECDSA sig (73 bytes) + ML-DSA sig (4595 bytes) = 4668 bytes
+    // Minimum: smallest ECDSA sig (71 bytes) + ML-DSA sig (3310 bytes) = 3381 bytes
+    // Maximum: largest ECDSA sig (73 bytes) + ML-DSA sig (3310 bytes) = 3383 bytes
     return hybridSig.size() >= (71 + ML_DSA_65_SIG_SIZE) &&
            hybridSig.size() <= HYBRID_SIG_MAX_SIZE;
 }
@@ -169,7 +169,7 @@ inline bool ValidateHybridSignature(const std::vector<unsigned char>& hybridSig)
  * 
  * @param hybridSig Combined signature
  * @param ecdsaSig Output: ECDSA DER-encoded signature (71-73 bytes)
- * @param mldsaSig Output: ML-DSA signature (4595 bytes)
+ * @param mldsaSig Output: ML-DSA signature (3310 bytes)
  * @return true if split successful, false if format invalid
  */
 inline bool SplitHybridSignature(
@@ -212,7 +212,7 @@ inline bool SplitHybridSignature(
  * Combine ECDSA and ML-DSA signatures into hybrid format
  * 
  * @param ecdsaSig ECDSA DER-encoded signature (71-73 bytes)
- * @param mldsaSig ML-DSA signature (4595 bytes)
+ * @param mldsaSig ML-DSA signature (3310 bytes)
  * @param hybridSig Output: Combined hybrid signature
  * @return true if sizes are valid and combining succeeds
  */

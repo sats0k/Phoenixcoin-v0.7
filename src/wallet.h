@@ -93,13 +93,14 @@ public:
     bool fFillingKeyPool;
     void LoadHybridKeys();
 
-    std::map<CKeyID, CHybridKey> mapHybridKeys;
-    std::map<CKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
+    std::map<CHybridKeyID, CHybridKey> mapHybridKeys;
+    std::map<CHybridKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
 
     // ===== Hybrid key access methods (override from CKeyStore) =====
-    bool HaveHybridKey(const CKeyID &address) const;
-    bool GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const;
-    bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const;
+    bool HaveHybridKey(const CHybridKeyID &address) const override;
+    bool HaveHybridKeyByHash(const uint160 &keyHash) const override;
+    bool GetHybridKey(const CHybridKeyID &address, CHybridKey &keyOut) const override;
+    bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const override;
 
     bool fFileBacked;
     std::string strWalletFile;
@@ -138,12 +139,12 @@ public:
     std::map<CTxDestination, std::string> mapAddressBook;
 
     // Hybrid address book (stores names/labels for hybrid keys)
-    std::map<CKeyID, CHybridAddressEntry> mapHybridAddressBook;
+    std::map<CHybridKeyID, CHybridAddressEntry> mapHybridAddressBook;
 
     // ---- Hybrid Address Book Functions ----
-    bool SetHybridAddressBookName(const CKeyID& keyID, const std::string& strName, const std::string& strPurpose = "receive");
-    bool GetHybridAddressBookName(const CKeyID& keyID, std::string& strNameOut) const;
-    bool DelHybridAddressBookName(const CKeyID& keyID);
+    bool SetHybridAddressBookName(const CHybridKeyID& hybridID, const std::string& strName, const std::string& strPurpose = "receive");
+    bool GetHybridAddressBookName(const CHybridKeyID& hybridID, std::string& strNameOut) const;
+    bool DelHybridAddressBookName(const CHybridKeyID& hybridID);
     std::vector<std::pair<CKeyID, std::string>> ListHybridAddresses() const;
     void LoadHybridAddressBook();
 

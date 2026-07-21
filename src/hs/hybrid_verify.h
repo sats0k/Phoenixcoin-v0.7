@@ -37,8 +37,8 @@
  * NIST FIPS 204 as a post-quantum signature scheme resistant to attacks
  * by both classical and quantum computers.
  * 
- * @param mldsaSig    ML-DSA-65 signature in binary format (4595 bytes)
- * @param mldsaPubKey ML-DSA-65 public key in DER format (1312 bytes)
+ * @param mldsaSig    ML-DSA-65 signature in binary format (3310 bytes)
+ * @param mldsaPubKey ML-DSA-65 public key in DER format (1952 bytes)
  * @param msg         Message to verify (typically 32-byte sighash)
  * @return true if signature verifies, false if invalid or error
  * 
@@ -48,77 +48,55 @@
 inline bool VerifyMLDSA(
     const std::vector<unsigned char>& mldsaSig,
     const std::vector<unsigned char>& mldsaPubKey,
-    const std::vector<unsigned char>& msg
-)
+    const std::vector<unsigned char>& msg)
 {
-    // ---- Input validation ----
-    if (mldsaSig.size() != ML_DSA_65_SIG_SIZE) {
+    // Validate inputs
+    if (mldsaSig.empty())
         return false;
-    }
 
-    if (mldsaPubKey.size() != ML_DSA_65_PUBKEY_SIZE) {
+    if (mldsaPubKey.size() != ML_DSA_65_PUBKEY_SIZE)
         return false;
-    }
 
-    if (msg.empty() || msg.size() > 1024) {
+    if (msg.empty() || msg.size() > 1024)
         return false;
-    }
 
-    // ---- Deserialize ML-DSA public key (DER format) ----
-    // OpenSSL 3.2+ uses EVP_PKEY_ML_DSA_65 for ML-DSA-65 keys
-    EVP_PKEY* pkey = NULL;
-    const unsigned char* pubkey_ptr = mldsaPubKey.data();
-    
-    pkey = d2i_PublicKey(
-        EVP_PKEY_ML_DSA_65,  // Correct OpenSSL 3.2 constant
-        &pkey,
-        &pubkey_ptr,
-        (long)mldsaPubKey.size()
-    );
+    // Import raw ML-DSA public key
+    EVP_PKEY* pkey = EVP_PKEY_new_raw_public_key_ex(
+        nullptr,
+        "ML-DSA-65",
+        nullptr,
+        mldsaPubKey.data(),
+        mldsaPubKey.size());
 
-    if (!pkey) {
-        // Failed to deserialize public key
+    if (!pkey)
         return false;
-    }
 
-    // ---- Create EVP_MD_CTX for verification ----
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    if (!ctx) {
+    if (!ctx)
+    {
         EVP_PKEY_free(pkey);
         return false;
     }
 
-    // ---- Initialize digest verification (SHA-256) ----
-    const EVP_MD* md = EVP_sha256();
-    if (!md) {
+    if (EVP_DigestVerifyInit(ctx, nullptr, nullptr, nullptr, pkey) <= 0)
+    {
         EVP_MD_CTX_free(ctx);
         EVP_PKEY_free(pkey);
         return false;
     }
 
-    if (1 != EVP_DigestVerifyInit(ctx, NULL, md, NULL, pkey)) {
-        EVP_MD_CTX_free(ctx);
-        EVP_PKEY_free(pkey);
-        return false;
-    }
+    const bool ok =
+        EVP_DigestVerify(
+            ctx,
+            mldsaSig.data(),
+            mldsaSig.size(),
+            msg.data(),
+            msg.size()) == 1;
 
-    // ---- Feed message data ----
-    if (1 != EVP_DigestVerifyUpdate(ctx, msg.data(), msg.size())) {
-        EVP_MD_CTX_free(ctx);
-        EVP_PKEY_free(pkey);
-        return false;
-    }
-
-    // ---- Verify signature ----
-    // Returns: 1 if signature is valid, 0 if invalid, -1 if error
-    int result = EVP_DigestVerifyFinal(ctx, mldsaSig.data(), mldsaSig.size());
-
-    // ---- Cleanup ----
     EVP_MD_CTX_free(ctx);
     EVP_PKEY_free(pkey);
 
-    // Return true only if result == 1 (valid signature)
-    return (result == 1);
+    return ok;
 }
 
 // ============================================================================
@@ -150,6 +128,7 @@ extern void BuildHybridMessage(
     const uint256& sighash,
     std::vector<unsigned char>& outMsg
 );
+
 
 /**
  * Forward declaration for SignatureHash from script.cpp
@@ -184,7 +163,7 @@ extern uint256 SignatureHash(
  * @param vchSigEC      ECDSA signature (DER-encoded, 71-73 bytes)
  * @param vchSigML      ML-DSA-65 signature (4595 bytes)
  * @param vchPubKeyEC   ECDSA public key (33 bytes, compressed secp256k1)
- * @param vchPubKeyML   ML-DSA-65 public key (1312 bytes, DER format)
+ * @param vchPubKeyML   ML-DSA-65 public key (1950 bytes, DER format)
  * @param scriptCode    Script being executed (for codeseparator handling)
  * @param txTo          Transaction being verified
  * @param nIn           Input index in transaction
@@ -210,70 +189,77 @@ inline bool VerifyHybridSignature(
     const CScript& scriptCode,
     const CTransaction& txTo,
     unsigned int nIn,
-    int nHashType
-)
+    int nHashType)
 {
-    // ---- Input size validation ----
-    // ECDSA: 71-73 bytes (DER-encoded signature)
-    if (vchSigEC.size() < 71 || vchSigEC.size() > 73) {
+    // ------------------------------------------------------------
+    // Basic validation
+    // ------------------------------------------------------------
+    if (vchSigEC.empty() ||
+        vchSigML.empty() ||
+        vchPubKeyEC.empty() ||
+        vchPubKeyML.empty())
+        return false;
+
+    if (vchPubKeyEC.size() != ECDSA_PUBKEY_SIZE)
+        return false;
+
+    if (vchPubKeyML.size() != ML_DSA_65_PUBKEY_SIZE)
+        return false;
+
+    // ------------------------------------------------------------
+    // Determine sighash type
+    // Both signatures must carry the same hash type.
+    // ------------------------------------------------------------
+    int hashTypeEC = vchSigEC.back();
+    int hashTypeML = vchSigML.back();
+
+    if (hashTypeEC != hashTypeML)
+        return false;
+
+    if (nHashType != 0 && hashTypeEC != nHashType)
+        return false;
+
+    // ------------------------------------------------------------
+    // Verify ECDSA signature
+    // ------------------------------------------------------------
+    if (!CheckSig(
+            vchSigEC,
+            vchPubKeyEC,
+            scriptCode,
+            txTo,
+            nIn,
+            hashTypeEC))
+    {
         return false;
     }
 
-    // ML-DSA-65: exactly 4595 bytes (per FIPS 204)
-    if (vchSigML.size() != ML_DSA_65_SIG_SIZE) {
+    // ------------------------------------------------------------
+    // Remove sighash byte from ML-DSA signature
+    // ------------------------------------------------------------
+    std::vector<unsigned char> mldsaSig(
+        vchSigML.begin(),
+        vchSigML.end() - 1);
+
+    // ------------------------------------------------------------
+    // Build the exact message signed by ML-DSA
+    // ------------------------------------------------------------
+    uint256 sighash =
+        SignatureHash(scriptCode, txTo, nIn, hashTypeEC);
+
+    std::vector<unsigned char> hybridMsg;
+    BuildHybridMessage(sighash, hybridMsg);
+
+    // ------------------------------------------------------------
+    // Verify ML-DSA signature
+    // ------------------------------------------------------------
+    if (!VerifyMLDSA(
+            mldsaSig,
+            vchPubKeyML,
+            hybridMsg))
+    {
         return false;
     }
 
-    // ECDSA pubkey: 33 bytes (compressed secp256k1)
-    if (vchPubKeyEC.size() != ECDSA_PUBKEY_SIZE) {
-        return false;
-    }
-
-    // ML-DSA-65 pubkey: 1312 bytes (per FIPS 204)
-    if (vchPubKeyML.size() != ML_DSA_65_PUBKEY_SIZE) {
-        return false;
-    }
-
-    // ---- Step 1: Verify ECDSA signature ----
-    // Uses classical secp256k1 ECDSA verification
-    // This is faster to evaluate and can early-exit if invalid
-    bool ecdsaValid = CheckSig(
-        vchSigEC,
-        vchPubKeyEC,
-        scriptCode,
-        txTo,
-        nIn,
-        nHashType
-    );
-    
-    if (!ecdsaValid) {
-        return false;  // Classical signature failed, reject
-    }
-
-    // ---- Step 2: Compute sighash and build ML-DSA message ----
-    // Get the transaction signature hash (deterministic)
-    uint256 sighash = SignatureHash(scriptCode, txTo, nIn, nHashType);
-    
-    // Build domain-separated message (32-byte sighash)
-    // This ensures ML-DSA signs a different message than ECDSA,
-    // preventing signature substitution attacks across algorithms
-    std::vector<unsigned char> msg;
-    BuildHybridMessage(sighash, msg);
-
-    // Verify message was constructed correctly
-    if (msg.size() != 32) {
-        return false;
-    }
-
-    // ---- Step 3: Verify ML-DSA-65 signature ----
-    // Uses NIST FIPS 204 ML-DSA-65 for post-quantum security
-    bool mldsaValid = VerifyMLDSA(vchSigML, vchPubKeyML, msg);
-
-    if (!mldsaValid) {
-        return false;  // Post-quantum signature failed, reject
-    }
-
-    // ---- Both signatures verified successfully ----
     return true;
 }
 

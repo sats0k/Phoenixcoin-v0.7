@@ -256,15 +256,8 @@ public:
     CCoinAddressVisitor(CCoinAddress *addrIn) : addr(addrIn) { }
     bool operator()(const CKeyID &id) const;
     bool operator()(const CScriptID &id) const;
-    bool operator()(const CNoDestination &no) const;
-    bool operator()(const CHybridPubKey &key) const {
-        // Hybrid addresses are valid if both keys are valid
-        return key.IsValid();
-    }
-    bool operator()(const CMLDSA65PubKey &id) const {
-        // Legacy ML-DSA65 - maintain backward compatibility
-         return true;
-     }
+    bool operator()(const CNoDestination &) const;
+    bool operator()(const CHybridKeyID &id) const;
 };
 
 class CCoinAddress : public CBase58Data {
@@ -293,13 +286,9 @@ public:
     }
 
     /* Hybrid address support */
-    bool Set(const CHybridPubKey& hybridKey) {
-        if (!hybridKey.IsValid()) {
-            return false;
-        }
-        std::vector<unsigned char> data = hybridKey.Serialize();
-        SetData(fTestNet ? HYBRID_ADDRESS_TEST_VERSION : HYBRID_ADDRESS_VERSION,
-                data.data(), data.size());
+    bool Set(const CHybridKeyID& id) {
+        SetData(fTestNet ? HYBRID_ADDRESS_TEST : HYBRID_ADDRESS,
+                (const unsigned char*)&id, 20);
         return true;
     }
 
@@ -327,13 +316,13 @@ public:
                 nExpectedSize = 20;
                 break;
             case(HYBRID_ADDRESS):
-                /* Hybrid ECDSA + ML-DSA public key */
+                /* Hybrid address = Hash160(serialized hybrid public key) */
                 fExpectTestNet = false;
-                nExpectedSize = CHybridPubKey::TOTAL_SIZE;  // 1985 bytes
+                nExpectedSize = 20;
                 break;
             case(HYBRID_ADDRESS_TEST):
                 fExpectTestNet = true;
-                nExpectedSize = CHybridPubKey::TOTAL_SIZE;
+                nExpectedSize = 20;
                 break;
             default:
                 return(false);
@@ -381,7 +370,9 @@ public:
             }
             case(HYBRID_ADDRESS):
             case(HYBRID_ADDRESS_TEST):
-                return GetHybridKey();
+                uint160 id;
+                memcpy(&id, &vchData[0], 20);
+                return CHybridKeyID(id);
         }
         return(CNoDestination());
     }
@@ -398,6 +389,23 @@ public:
             }
             default:
                 return(false);
+        }
+    }
+
+    bool GetHybridKeyID(CHybridKeyID &hybridID) const {
+        if (!IsValid()) return false;
+
+        switch (nVersion) {
+            case HYBRID_ADDRESS:
+            case HYBRID_ADDRESS_TEST: {
+                uint160 id;
+                memcpy(&id, &vchData[0], 20);
+                hybridID = CHybridKeyID(id);
+                return true;
+            }
+
+            default:
+                return false;
         }
     }
 
@@ -421,6 +429,10 @@ bool inline CCoinAddressVisitor::operator()(const CScriptID &id) const {
 }
 bool inline CCoinAddressVisitor::operator()(const CNoDestination &id) const {
     return(false);
+}
+
+bool inline CCoinAddressVisitor::operator()(const CHybridKeyID &id) const {
+    return addr->Set(id);
 }
 
 /** A base58-encoded secret key */

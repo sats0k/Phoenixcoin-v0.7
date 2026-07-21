@@ -44,7 +44,28 @@ struct CHybridKey
 
     CHybridKey() = default;
 
-    CKeyID GetKeyID() const { return secpPub.GetID(); }
+    // Legacy ECDSA identifier
+    CKeyID GetKeyID() const
+    {
+        return secpPub.GetID();
+    }
+
+    // Native Hybrid identifier
+    CHybridKeyID GetHybridID() const
+    {
+        if (!mldsaSigner)
+            throw std::runtime_error("Hybrid key has no MLDSA signer");
+
+        std::vector<unsigned char> blob;
+
+        std::vector<unsigned char> secp = secpPub.Raw();
+        std::vector<unsigned char> ml   = mldsaSigner->GetPublicKey();
+
+        blob.insert(blob.end(), secp.begin(), secp.end());
+        blob.insert(blob.end(), ml.begin(), ml.end());
+
+        return CHybridKeyID(Hash160(blob));
+    }
 
     CKey GetCKey() const
     {

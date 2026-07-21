@@ -27,6 +27,13 @@ public:
     friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
 };
 
+class CHybridKeyID : public uint160
+{
+public:
+    CHybridKeyID() {}
+    CHybridKeyID(const uint160& in) : uint160(in) {}
+};
+
 /* Hybrid Public Key Storage */
 struct CHybridPubKey {
     std::vector<unsigned char> ecdsaPubKey;    // 33 bytes (compressed secp256k1)
@@ -80,7 +87,13 @@ struct CHybridPubKey {
         return ecdsaPubKey == other.ecdsaPubKey &&
                mldsaPubKey == other.mldsaPubKey;
     }
- };
+
+    CHybridKeyID GetID() const
+    {
+        std::vector<unsigned char> blob = Serialize();
+            return CHybridKeyID(Hash160(blob));
+    }
+};
 
 // Legacy alias for backward compatibility
 struct CMLDSA65PubKey {
@@ -91,13 +104,7 @@ struct CMLDSA65PubKey {
     }
 };
 
-/* A txout script template with a specific destination. It is either:
- *   CNoDestination: no destination set
- *   CKeyID: TX_PUBKEYHASH destination
- *   CScriptID: TX_SCRIPTHASH destination
- *   CHybridPubKey: TX_HYBRID_PUBKEY destination
- * A CTxDestination is the internal data type encoded in a CCoinAddress */
-typedef boost::variant<CNoDestination, CKeyID, CScriptID, CHybridPubKey> CTxDestination;
+typedef boost::variant<CNoDestination, CKeyID, CScriptID, CHybridKeyID> CTxDestination;
 
 /** A virtual base class for key stores */
 class CKeyStore
@@ -138,12 +145,17 @@ public:
     }
 
     // ===== Hybrid key support (forward declared in wallethybrid.h) =====
-    virtual bool HaveHybridKey(const CKeyID &address) const
+    virtual bool HaveHybridKey(const CHybridKeyID &address) const
     {
         return false;
     }
 
-    virtual bool GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const
+    virtual bool HaveHybridKeyByHash(const uint160 &keyHash) const
+    {
+        return false;
+    }
+
+    virtual bool GetHybridKey(const CHybridKeyID &address, CHybridKey &keyOut) const
     {
         return false;
     }

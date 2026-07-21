@@ -11,7 +11,7 @@
 // HYBRID ADDRESS BOOK IMPLEMENTATION
 // ============================================================================
 
-bool CWallet::SetHybridAddressBookName(const CKeyID& keyID, const std::string& strName, const std::string& strPurpose)
+bool CWallet::SetHybridAddressBookName(const CHybridKeyID& keyID, const std::string& strName, const std::string& strPurpose)
 {
     LOCK(cs_wallet);
     
@@ -41,7 +41,7 @@ bool CWallet::SetHybridAddressBookName(const CKeyID& keyID, const std::string& s
     return true;
 }
 
-bool CWallet::GetHybridAddressBookName(const CKeyID& keyID, std::string& strNameOut) const
+bool CWallet::GetHybridAddressBookName(const CHybridKeyID& keyID, std::string& strNameOut) const
 {
     LOCK(cs_wallet);
     
@@ -54,7 +54,7 @@ bool CWallet::GetHybridAddressBookName(const CKeyID& keyID, std::string& strName
     return true;
 }
 
-bool CWallet::DelHybridAddressBookName(const CKeyID& keyID)
+bool CWallet::DelHybridAddressBookName(const CHybridKeyID& keyID)
 {
     LOCK(cs_wallet);
     

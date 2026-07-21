@@ -154,24 +154,24 @@ bool LoadHybridKey(CWallet* wallet, const CHybridKeyDisk& disk)
     }
 
     // ---- Commit atomically ----
-    const CKeyID keyID = mem.GetKeyID();
+    CHybridKeyID hybridID = mem.GetHybridID();
+
     LOCK(wallet->cs_wallet);
 
-    if (wallet->mapHybridKeys.count(keyID)) {
-        printf("WARNING: hybrid key %s already loaded\n", keyID.ToString().c_str());
+    if (wallet->mapHybridKeys.count(hybridID)) {
+        printf("WARNING: hybrid key %s already loaded\n", hybridID.ToString().c_str());
         return true;
     }
 
-    wallet->mapHybridKeys.emplace(keyID, std::move(mem));
-    wallet->mapHybridSigners.emplace(keyID, std::move(signer));
+    wallet->mapHybridKeys.emplace(hybridID, std::move(mem));
+    wallet->mapHybridSigners.emplace(hybridID, std::move(signer));
 
-    printf("Hybrid key %s loaded successfully\n", keyID.ToString().c_str());
+    printf("Hybrid key %s loaded successfully\n", hybridID.ToString().c_str());
     return true;
 }
 
 bool CWallet::EnsureHybridKey(const CKeyID& keyID)
 {
-    LOCK(cs_wallet);
     if (mapHybridSigners.count(keyID)) return true;
 
     CKey key;
@@ -204,13 +204,16 @@ bool CWallet::EnsureHybridKey(const CKeyID& keyID)
         return false;
     }
 
+    // Compute once
+    CHybridKeyID hybridID = hk.GetHybridID();
+
     // ---- Stage 2: Persist to disk ----
     if (fFileBacked && !IsCrypted()) {
         try {
             CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
             CWalletDB walletdb(strWalletFile);
 
-            if (!walletdb.WriteHybridKey(keyID, disk)) {
+            if (!walletdb.WriteHybridKey(hybridID, disk)) {
                 printf("EnsureHybridKey(%s) DB write failed\n", keyID.ToString().c_str());
                 return false;
             }
@@ -221,16 +224,17 @@ bool CWallet::EnsureHybridKey(const CKeyID& keyID)
     }
 
     // ---- Stage 3: Commit to memory ----
-    mapHybridKeys.emplace(keyID, std::move(hk));
-    mapHybridSigners.emplace(keyID, std::move(signer));
+    LOCK(cs_wallet);
 
+    mapHybridKeys.emplace(hybridID, std::move(hk));
+    mapHybridSigners.emplace(hybridID, std::move(signer));
     return true;
 }
 
 void NewHybridKeyPool(CWallet* wallet, int nSize)
 {
-    std::vector<std::pair<CKeyID, CHybridKey>> stagedKeys;
-    std::vector<CHybridKeyDisk> stagedDisks;
+    std::vector<std::pair<CHybridKeyID, CHybridKey>> stagedKeys;
+    std::vector<std::pair<CHybridKeyID, CHybridKeyDisk>> stagedDisks;
 
     // Phase 1: Build locally
     try {
@@ -238,9 +242,9 @@ void NewHybridKeyPool(CWallet* wallet, int nSize)
             CHybridKey hk;
             GenerateHybridKey(hk);
 
-            CHybridKeyDisk disk = CHybridKeyDisk::FromMemory(hk);
-            stagedKeys.emplace_back(hk.GetKeyID(), std::move(hk));
-            stagedDisks.push_back(std::move(disk));
+            CHybridKeyID hybridID = hk.GetHybridID();
+            stagedKeys.emplace_back(hk.GetHybridID(), std::move(hk));
+            stagedDisks.emplace_back(hybridID, CHybridKeyDisk::FromMemory(stagedKeys.back().second));
         }
     } catch (const std::exception& e) {
         printf("ERROR: failed to generate hybrid key pool: %s\n", e.what());
@@ -252,8 +256,8 @@ void NewHybridKeyPool(CWallet* wallet, int nSize)
         CWalletDB walletdb(wallet->strWalletFile);
         walletdb.TxnBegin();
         bool success = true;
-        for (const auto& disk : stagedDisks) {
-            if (!walletdb.WriteHybridKey(disk.secpPub.GetID(), disk)) {
+        for (const auto& entry : stagedDisks) {
+            if (!walletdb.WriteHybridKey(entry.first, entry.second)) {
                 printf("ERROR: failed to write hybrid key to DB\n");
                 success = false;
                 break;
@@ -269,11 +273,10 @@ void NewHybridKeyPool(CWallet* wallet, int nSize)
     // Phase 3: Commit to memory
     {
         LOCK(wallet->cs_wallet);
-        for (auto& kv : stagedKeys) {
-            wallet->mapHybridKeys[kv.first] = std::move(kv.second);
+        for (auto& entry : stagedKeys) {
+            wallet->mapHybridKeys.emplace(entry.first, std::move(entry.second));
         }
     }
-
     printf("Hybrid key pool of size %d created successfully\n", nSize);
 }
 

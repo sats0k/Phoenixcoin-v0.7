@@ -29,6 +29,11 @@ using namespace boost;
 
 extern CWallet *pwalletMain;
 
+bool IsHybridConsensusActive()
+{
+    return nBestHeight >= HYBRID_ACTIVATION_HEIGHT;
+}
+
 //
 // Global state
 //
@@ -305,9 +310,16 @@ bool CTransaction::IsStandard() const
         if (!txin.scriptSig.IsPushOnly())
             return false;
     }
-    BOOST_FOREACH(const CTxOut& txout, vout) {
+    BOOST_FOREACH(const CTxOut& txout, vout)
+    {
+        std::vector<std::vector<unsigned char> > vSolutions;
+        txnouttype whichType;
+
+        Solver(txout.scriptPubKey, whichType, vSolutions);
+
         if (!::IsStandard(txout.scriptPubKey))
             return false;
+
         if (txout.nValue == 0)
             return false;
     }
@@ -350,8 +362,6 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
         // beside "push data" in the scriptSig the
         // IsStandard() call returns false
         vector<vector<unsigned char> > stack;
-        if (!EvalScript(stack, vin[i].scriptSig, *this, i, 0))
-            return false;
 
         if (whichType == TX_SCRIPTHASH)
         {
@@ -372,7 +382,10 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
             nArgsExpected += tmpExpected;
         }
 
-        if (stack.size() != (unsigned int)nArgsExpected)
+        if (!EvalScript(stack, vin[i].scriptSig, *this, i, 0))
+            return false;
+
+        if (stack.size() != (unsigned)nArgsExpected)
             return false;
     }
 
@@ -1481,12 +1494,8 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
                 // Verify signature
                 if (!VerifySignature(txPrev, *this, i, fStrictPayToScriptHash, 0))
                 {
-                    // only during transition phase for P2SH: do not invoke anti-DoS code for
-                    // potentially old clients relaying bad P2SH transactions
-                    if (fStrictPayToScriptHash && VerifySignature(txPrev, *this, i, false, 0))
-                        return error("ConnectInputs() : %s P2SH VerifySignature failed", GetHash().ToString().substr(0,10).c_str());
-
-                    return DoS(100,error("ConnectInputs() : %s VerifySignature failed", GetHash().ToString().substr(0,10).c_str()));
+                    return DoS(100,
+                        error("ConnectInputs() : VerifySignature failed"));
                 }
             }
 

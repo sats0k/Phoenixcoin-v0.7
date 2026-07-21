@@ -1073,7 +1073,7 @@ static void WalletTxToJSONHybrid(const CWalletTx& wtx, const string& strAccount,
     string sigType = "ECDSA";
     for (const CTxIn &txin : wtx.vin) {
         if (txin.scriptSig.size() > 70) { // ECDSA ~70 bytes, ML-DSA adds extra
-            sigType = "ECDSA+ML-DSA";
+            sigType = "Hybrid (ECDSA + ML-DSA-65)";
             break;
         }
     }
@@ -1310,7 +1310,7 @@ Value gettransaction(const Array &params, bool fHelp) {
     string sigType = "ECDSA";
     for (const CTxIn &txin : wtx.vin) {
         if (txin.scriptSig.size() > 70) { // rough heuristic for hybrid sigs
-            sigType = "ECDSA+ML-DSA";
+            sigType = "Hybrid (ECDSA + ML-DSA-65)";
             break;
         }
     }
@@ -1598,21 +1598,9 @@ public:
         return(obj);
     }
 
-    Object operator()(const CMLDSA65PubKey &mlKey) const {
-        Object obj;
-        obj.push_back(Pair("ml-dsa65", HexStr(mlKey.pubkey.begin(), mlKey.pubkey.end())));
-        obj.push_back(Pair("ismine", false)); // change to true if the key is in the wallet
-        return obj;
-    }
-
-    Object operator()(const CHybridPubKey &hybridKey) const {
-        Object obj;
-        obj.push_back(Pair("address", "hybrid"));
-        obj.push_back(Pair("hybrid", true));
-        obj.push_back(Pair("isscript", false));
-        obj.push_back(Pair("pubkey", HexStr(hybridKey.ecdsaPubKey)));
-        obj.push_back(Pair("mldsapubkey", HexStr(hybridKey.mldsaPubKey)));
-        return obj;
+    Object operator()(const CHybridKeyID& id) const
+    {
+        return operator()(CKeyID(id));
     }
 };
 

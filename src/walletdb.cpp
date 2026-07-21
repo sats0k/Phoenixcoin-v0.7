@@ -57,12 +57,12 @@ bool CWalletDB::LoadAllHybridKeys(std::vector<CHybridKeyDisk> &vKeys)
     return true;
 }
 
-bool CWalletDB::WriteHybridKey(const CKeyID &keyID, const CHybridKeyDisk &disk)
+bool CWalletDB::WriteHybridKey(const CHybridKeyID &keyID, const CHybridKeyDisk &disk)
 {
     return Write(std::make_pair(std::string("hyb"), keyID), disk);
 }
 
-bool CWalletDB::WriteHybridKeyMetadata(const CKeyID& keyid, const CHybridKeyMetadata& meta)
+bool CWalletDB::WriteHybridKeyMetadata(const CHybridKeyID& keyid, const CHybridKeyMetadata& meta)
 {
     return Write(std::make_pair(std::string("hybridkeymeta"), keyid), meta);
 }

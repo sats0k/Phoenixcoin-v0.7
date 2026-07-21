@@ -330,35 +330,45 @@ Value dumphybridkey(const Array& params, bool fHelp)
     if (!address.SetString(strAddress))
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
 
-    CKeyID keyID;
-    if (!address.GetKeyID(keyID))
-        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to a key");
+    // Parse hybrid address
+    CTxDestination dest = address.Get();
 
-    LOCK(pwalletMain->cs_wallet);
+    const CHybridKeyID* pHybridID = boost::get<CHybridKeyID>(&dest);
+
+    if (!pHybridID)
+        throw JSONRPCError(RPC_TYPE_ERROR, "Address is not a hybrid address");
+
+    CHybridKeyID hybridID = *pHybridID;
+
+    // Load the hybrid key
+    CHybridKey hk;
+
+    if (!pwalletMain->GetHybridKey(hybridID, hk))
+        throw JSONRPCError(RPC_WALLET_ERROR, "No hybrid key for this address");
+
+    // Recover the legacy KeyID
+    CKeyID keyID = hk.GetKeyID();
 
     // ---- secp256k1 (same as dumpprivkey) ----
     CSecret vchSecret;
     bool fCompressed;
     if (!pwalletMain->GetSecret(keyID, vchSecret, fCompressed)) {
-        throw JSONRPCError(
-            RPC_WALLET_ERROR,
-            "Private key for address " + strAddress + " is not known");
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address " +
+                                                 strAddress + " is not known");
     }
 
     string wif = CCoinSecret(vchSecret, fCompressed).ToString();
 
-    // ---- hybrid MLDSA ----
-    if (!pwalletMain->EnsureHybridKey(keyID))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to create hybrid key");
-
-    auto it = pwalletMain->mapHybridSigners.find(keyID);
-    if (it == pwalletMain->mapHybridSigners.end())
+    if (!pwalletMain->GetHybridKey(hybridID, hk))
         throw JSONRPCError(RPC_WALLET_ERROR, "No hybrid key for this address");
 
-    MLDSASigner* signer = it->second.get();
+    MLDSASigner* signer = hk.mldsaSigner.get();
+
+    if (!signer) throw JSONRPCError(RPC_WALLET_ERROR, "MLDSA signer missing");
+
     EVP_PKEY* pkey = signer->GetKey();
-    if (!pkey)
-        throw JSONRPCError(RPC_WALLET_ERROR, "MLDSA key missing");
+
+    if (!pkey) throw JSONRPCError(RPC_WALLET_ERROR, "MLDSA key missing");
 
     // Serialize MLDSA private key to DER
     unsigned char* buf = NULL;
@@ -422,16 +432,24 @@ Value gethybridaddress(const Array& params, bool fHelp) {
                            "Failed to add ECDSA key to wallet");
     }
 
-    CKeyID keyID = hybridKey.GetKeyID();
-    CPubKey ecdsaPubKey = hybridKey.secpPub;
+    std::vector<unsigned char> blob;
+
+    std::vector<unsigned char> ecdsaPub = hybridKey.secpPub.Raw();
+
+    std::vector<unsigned char> mlpub = hybridKey.mldsaSigner->GetPublicKey();
+
+    blob.insert(blob.end(), ecdsaPub.begin(), ecdsaPub.end());
+
+    blob.insert(blob.end(), mlpub.begin(), mlpub.end());
+
+    CHybridKeyID hybridID = hybridKey.GetHybridID();
 
     // Store in wallet - move semantics since we can't copy
     {
         LOCK(pwalletMain->cs_wallet);
 
-        pwalletMain->mapHybridKeys.emplace(keyID, std::move(hybridKey));
-
-        auto it = pwalletMain->mapHybridKeys.find(keyID);
+        pwalletMain->mapHybridKeys.emplace(hybridID, std::move(hybridKey));
+        auto it = pwalletMain->mapHybridKeys.find(hybridID);
         if (it == pwalletMain->mapHybridKeys.end())
             throw JSONRPCError(RPC_WALLET_ERROR, "Failed to store hybrid key.");
 
@@ -441,12 +459,12 @@ Value gethybridaddress(const Array& params, bool fHelp) {
             throw JSONRPCError(RPC_WALLET_ERROR,
                                "Failed to clone MLDSA signer.");
 
-        pwalletMain->mapHybridSigners.emplace(keyID, std::move(signer));
+        pwalletMain->mapHybridSigners.emplace(hybridID, std::move(signer));
 
         // Persist to database
         CWalletDB walletdb(pwalletMain->strWalletFile);
         CHybridKeyDisk diskKey = CHybridKeyDisk::FromMemory(it->second);
-        if (!walletdb.WriteHybridKey(keyID, diskKey))
+        if (!walletdb.WriteHybridKey(hybridID, diskKey))
             throw JSONRPCError(
                 RPC_WALLET_ERROR,
                 "Error: Failed to write hybrid key to database.");
@@ -454,7 +472,7 @@ Value gethybridaddress(const Array& params, bool fHelp) {
 
     // Native hybrid address uses the ECDSA KeyID.
     // The wallet binds this KeyID to both the ECDSA and ML-DSA keys.
-    CCoinAddress address(keyID);
+    CCoinAddress address(hybridID);
     string strAddress = address.ToString();
 
     // Set label if provided
@@ -462,11 +480,11 @@ Value gethybridaddress(const Array& params, bool fHelp) {
         string strLabel = params[0].get_str();
         {
             LOCK(pwalletMain->cs_wallet);
-            pwalletMain->SetHybridAddressBookName(keyID, strLabel);
+            pwalletMain->SetHybridAddressBookName(hybridID, strLabel);
 
             // Persist label
             CWalletDB walletdb(pwalletMain->strWalletFile);
-            walletdb.WriteHybridAddressEntry(keyID, strLabel);
+            walletdb.WriteHybridAddressEntry(hybridID, strLabel);
         }
     }
 
@@ -477,13 +495,7 @@ Value listhybridaddresses(const Array& params, bool fHelp) {
     if (fHelp || params.size() > 1)
         throw runtime_error(
             "listhybridaddresses [includeempty]\n"
-            "Returns a list of all hybrid (quantum-resistant) addresses in the "
-            "wallet.\n"
-            "\nArguments:\n"
-            "1. includeempty (boolean, optional, default=false) - Include "
-            "addresses with no labels\n"
-            "\nResult is array of objects with: address, label, pubkey_ecdsa, "
-            "created\n");
+            "Returns a list of all hybrid addresses in the wallet.");
 
     bool fIncludeEmpty = true;
     if (params.size() > 0) fIncludeEmpty = params[0].get_bool();
@@ -492,30 +504,35 @@ Value listhybridaddresses(const Array& params, bool fHelp) {
     {
         LOCK(pwalletMain->cs_wallet);
 
-        for (map<CKeyID, CHybridKey>::iterator it =
+        for (std::map<CHybridKeyID, CHybridKey>::const_iterator it =
                  pwalletMain->mapHybridKeys.begin();
              it != pwalletMain->mapHybridKeys.end(); ++it) {
-            const CKeyID& keyID = it->first;
+            const CHybridKeyID& hybridID = it->first;
             const CHybridKey& hybridKey = it->second;
 
-            // Get label if exists
-            string strLabel = "";
-            if (pwalletMain->mapHybridAddressBook.count(keyID))
-                strLabel = pwalletMain->mapHybridAddressBook[keyID].strLabel;
+            printf("Stored ID    : %s\n", hybridID.ToString().c_str());
+            printf("Address      : %s\n",
+                   CCoinAddress(hybridID).ToString().c_str());
 
-            if (!fIncludeEmpty && strLabel.empty())
-                continue;  // Skip unlabeled addresses if not requested
+            std::string strLabel;
 
-            // Native hybrid addresses use the ECDSA KeyID
-            CCoinAddress address(keyID);
+            std::map<CHybridKeyID, CHybridAddressEntry>::const_iterator ab =
+                pwalletMain->mapHybridAddressBook.find(hybridID);
 
-            // Build result object
+            if (ab != pwalletMain->mapHybridAddressBook.end())
+                strLabel = ab->second.strLabel;
+
+            if (!fIncludeEmpty && strLabel.empty()) continue;
+
+            CCoinAddress address(hybridID);
+
             Object obj;
             obj.push_back(Pair("address", address.ToString()));
             obj.push_back(Pair("label", strLabel));
             obj.push_back(
                 Pair("pubkey_ecdsa", HexStr(hybridKey.secpPub.Raw())));
-            obj.push_back(Pair("created", (int64_t)hybridKey.nCreateTime));
+            obj.push_back(Pair(
+                "created", static_cast<boost::int64_t>(hybridKey.nCreateTime)));
 
             result.push_back(obj);
         }
@@ -541,20 +558,27 @@ Value gethybridkey(const Array& params, bool fHelp) {
 
     if (!address.IsValid())
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-                           "Invalid Bitcoin address");
+                           "Invalid Phoenixcoin address");
 
-    CKeyID keyID;
-    if (!address.GetKeyID(keyID))
+    CHybridKeyID hybridID;
+
+    CTxDestination dest = address.Get();
+
+    const CHybridKeyID* pHybridID = boost::get<CHybridKeyID>(&dest);
+
+    if (!pHybridID)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-                           "Address is not a key address");
+                           "Address is not a hybrid address");
+
+    hybridID = *pHybridID;
 
     const CHybridKey* pHybridKey = NULL;
 
     {
         LOCK(pwalletMain->cs_wallet);
 
-        map<CKeyID, CHybridKey>::const_iterator it =
-            pwalletMain->mapHybridKeys.find(keyID);
+        map<CHybridKeyID, CHybridKey>::const_iterator it =
+            pwalletMain->mapHybridKeys.find(hybridID);
 
         if (it == pwalletMain->mapHybridKeys.end())
             throw JSONRPCError(
@@ -574,7 +598,7 @@ Value gethybridkey(const Array& params, bool fHelp) {
     printf("Hybrid signers: %u\n",
            (unsigned)pwalletMain->mapHybridSigners.size());
 
-    if (!pwalletMain->mapHybridSigners.count(keyID)) {
+    if (!pwalletMain->mapHybridSigners.count(hybridID)) {
         printf("Signer NOT found\n");
     } else {
         printf("Signer found\n");
@@ -610,9 +634,11 @@ Value gethybridkey(const Array& params, bool fHelp) {
     // Add label if exists
     {
         LOCK(pwalletMain->cs_wallet);
-        if (pwalletMain->mapHybridAddressBook.count(keyID))
-            result.push_back(Pair(
-                "label", pwalletMain->mapHybridAddressBook[keyID].strLabel));
+        std::map<CHybridKeyID, CHybridAddressEntry>::const_iterator ab =
+            pwalletMain->mapHybridAddressBook.find(hybridID);
+
+        if (ab != pwalletMain->mapHybridAddressBook.end())
+            result.push_back(Pair("label", ab->second.strLabel));
     }
 
     return result;

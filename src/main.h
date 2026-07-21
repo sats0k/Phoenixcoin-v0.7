@@ -32,6 +32,11 @@ class CInv;
 class CRequestTracker;
 class CNode;
 
+// Hybrid consensus activation
+static const int HYBRID_ACTIVATION_HEIGHT = 0;
+
+bool IsHybridConsensusActive();
+
 /* Maturity threshold for PoW base transactions, in blocks (confirmations) */
 extern int nBaseMaturity;
 static const int BASE_MATURITY = 100;

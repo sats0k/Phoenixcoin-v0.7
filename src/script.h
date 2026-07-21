@@ -188,6 +188,8 @@ enum opcodetype
     OP_CHECKHYBRIDSIG = 0xbc,           // Single hybrid signature check
     OP_CHECKHYBRIDSIGVERIFY = 0xbd,    // With VERIFY
     OP_CHECKMULTIHYBRIDSIG = 0xbe,     // M-of-N hybrid multisig
+    OP_HASHHYBRID160 = 0xbf,
+    OP_DUPHYBRID = 0xca,
 
     // template matching params
     OP_SMALLINTEGER = 0xfa,
@@ -224,6 +226,16 @@ inline std::string StackString(const std::vector<std::vector<unsigned char> >& v
 
 
 
+// ---------------------------------------------------------------------
+// Hybrid script helpers
+// ---------------------------------------------------------------------
+
+CScript GetScriptForHybridPubKey(const CHybridPubKey& hybridKey);
+CScript GetScriptForHybridPubKeyHash(const uint160& hash160);
+CScript GetScriptForHybridScriptHash(const uint256& scriptHash);
+CScript GetScriptForHybridMultisig(
+    int nRequired,
+    const std::vector<CHybridPubKey>& keys);
 
 
 
@@ -325,8 +337,8 @@ public:
 
     CScript& operator<<(const uint160& b)
     {
-        insert(end(), sizeof(b));
-        insert(end(), (unsigned char*)&b, (unsigned char*)&b + sizeof(b));
+        insert(end(), 20);
+        insert(end(), b.begin(), b.end());
         return *this;
     }
 

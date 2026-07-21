@@ -9,6 +9,7 @@
 
 #include "base58.h"
 #include "crypter.h"
+#include "main.h"
 #include "walletdb.h"
 #include "wallet.h"
 #include "hs/wallethybrid.h"
@@ -29,56 +30,59 @@ struct CompareValueOnly
     }
 };
 
-bool CWallet::HaveHybridKey(const CKeyID &address) const
+bool CWallet::HaveHybridKey(const CHybridKeyID &address) const
 {
     LOCK(cs_wallet);
     return mapHybridKeys.count(address) > 0;
 }
 
-bool CWallet::GetHybridKey(const CKeyID &address, CHybridKey &keyOut) const
+bool CWallet::GetHybridKey(const CHybridKeyID& hybridID,
+                           CHybridKey& keyOut) const
 {
     LOCK(cs_wallet);
-    auto it = mapHybridKeys.find(address);
-    if (it != mapHybridKeys.end())
-    {
-        // Can't copy unique_ptr, so construct/move instead
-        keyOut.secpPriv = it->second.secpPriv;
-        keyOut.secpPub = it->second.secpPub;
-        keyOut.mldsaAlg = it->second.mldsaAlg;
-        keyOut.nCreateTime = it->second.nCreateTime;
 
-        keyOut.mldsaSigner = GetSignerFromKey(it->second);
+    std::map<CHybridKeyID, CHybridKey>::const_iterator it =
+        mapHybridKeys.find(hybridID);
 
-        if (!keyOut.mldsaSigner)
-            return false;
+    if (it == mapHybridKeys.end())
+        return false;
 
-        return true;
-    }
-    return false;
+    keyOut.secpPriv = it->second.secpPriv;
+    keyOut.secpPub = it->second.secpPub;
+    keyOut.mldsaAlg = it->second.mldsaAlg;
+    keyOut.nCreateTime = it->second.nCreateTime;
+    keyOut.mldsaSigner = GetSignerFromKey(it->second);
+
+    return keyOut.mldsaSigner != NULL;
 }
 
-bool CWallet::GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const
+bool CWallet::HaveHybridKeyByHash(const uint160& keyHash) const
 {
     LOCK(cs_wallet);
-    for (const auto& pair : mapHybridKeys)
-    {
-        if (Hash160(pair.second.secpPub.Raw()) == keyHash)
-        {
-            // Copy the copyable parts
-            keyOut.secpPriv = pair.second.secpPriv;
-            keyOut.secpPub = pair.second.secpPub;
-            keyOut.mldsaAlg = pair.second.mldsaAlg;
-            keyOut.nCreateTime = pair.second.nCreateTime;
+    CHybridKeyID hybridID(keyHash);
+    return mapHybridKeys.find(hybridID) != mapHybridKeys.end();
+}
 
-            keyOut.mldsaSigner = GetSignerFromKey(pair.second);
+bool CWallet::GetHybridKeyByHash(const uint160& keyHash,
+                                 CHybridKey& keyOut) const
+{
+    LOCK(cs_wallet);
 
-            if (!keyOut.mldsaSigner)
-                return false;
+    CHybridKeyID hybridID(keyHash);
 
-            return true;
-        }
-    }
-    return false;
+    std::map<CHybridKeyID, CHybridKey>::const_iterator it =
+        mapHybridKeys.find(hybridID);
+
+    if (it == mapHybridKeys.end())
+        return false;
+
+    keyOut.secpPriv     = it->second.secpPriv;
+    keyOut.secpPub      = it->second.secpPub;
+    keyOut.mldsaAlg     = it->second.mldsaAlg;
+    keyOut.nCreateTime  = it->second.nCreateTime;
+    keyOut.mldsaSigner  = GetSignerFromKey(it->second);
+
+    return keyOut.mldsaSigner != NULL;
 }
 
 CPubKey CWallet::GenerateNewKey()
@@ -113,9 +117,6 @@ bool CWallet::AddKey(const CKey& key)
 
     if (!CCryptoKeyStore::AddKey(key))
         return false;
-
-    if (!fFillingKeyPool)
-        EnsureHybridKey(keyID);
 
     if (!fFileBacked)
         return true;
@@ -1282,6 +1283,7 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
 
 bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx *, uint> > &setCoinsRet,
   int64 &nValueRet, const CCoinControl *coinControl) const {
+
     vector<COutput> vCoins;
     AvailableCoins(vCoins, true, coinControl);
 
@@ -1531,7 +1533,52 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nVal
 
     /* Parse Phoenixcoin address */
     CScript scriptPubKey;
-    scriptPubKey.SetDestination(address);
+
+    // -----------------------------------------------------------------
+    // Hybrid outputs (after consensus activation)
+    // -----------------------------------------------------------------
+    if (IsHybridConsensusActive())
+    {
+        const CKeyID* pKeyID = boost::get<CKeyID>(&address);
+
+        if (pKeyID)
+        {
+            LOCK(cs_wallet);
+
+            std::map<CHybridKeyID, CHybridKey>::const_iterator it =
+                mapHybridKeys.find(CHybridKeyID(*pKeyID));
+
+            if (it != mapHybridKeys.end())
+            {
+                std::unique_ptr<MLDSASigner> signer =
+                    GetSignerFromKey(it->second);
+
+                if (!signer)
+                    return "Hybrid signer missing.";
+
+                CHybridPubKey hybridPub(
+                    it->second.secpPub.Raw(),
+                    signer->GetPublicKey());
+
+                scriptPubKey = GetScriptForHybridPubKey(hybridPub);
+            }
+            else
+            {
+                // Legacy address
+                scriptPubKey.SetDestination(address);
+            }
+        }
+        else
+        {
+            // Script, multisig, etc.
+            scriptPubKey.SetDestination(address);
+        }
+    }
+    else
+    {
+        // Before hybrid activation
+        scriptPubKey.SetDestination(address);
+    }
 
     return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee);
 }
