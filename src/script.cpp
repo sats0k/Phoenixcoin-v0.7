@@ -121,8 +121,6 @@ const char* GetTxnOutputType(txnouttype t) {
         return "scripthash";
     case TX_MULTISIG:
         return "multisig";
-    case TX_MLDSA65_PUBKEY:
-        return "mldsa65_pubkey";
     case TX_HYBRID_PUBKEY:
         return "hybrid_pubkey";
     case TX_HYBRID_PUBKEYHASH:
@@ -1280,32 +1278,6 @@ class CSignatureCache {
     }
 };
 
-// ------------------------------------------------------------------------
-// Consensus-safe hybrid signature support (v0.7 PXC)
-// ------------------------------------------------------------------------
-
-// Wrapper to domain-separate and verify a single signature
-static bool CheckHybridSig(const std::vector<uint8_t>& vchSig,
-                           const std::vector<unsigned char>& vchPubKey,
-                           const CScript& scriptCode,
-                           const CTransaction& txTo,
-                           unsigned int nIn,
-                           int nHashType)
-{
-    if (vchSig.empty()) return false;
-    if (nHashType == 0) nHashType = vchSig.back();
-    else if (nHashType != vchSig.back()) return false;
-
-    uint256 sighash = SignatureHash(scriptCode, txTo, nIn, nHashType);
-
-    // Domain-separated hybrid message
-    std::vector<uint8_t> msg;
-    BuildHybridMessage(sighash, msg);
-
-    // Use existing CheckSig (raw bytes)
-    return CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType);
-}
-
 // ==================== Hybrid-Compatible CheckSig ====================
 
 bool CheckSig(const std::vector<unsigned char>& vchSig,
@@ -1706,8 +1678,6 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
     case TX_MULTISIG:
         scriptSigRet << OP_0; // workaround CHECKMULTISIG bug
         return (SignN(vSolutions, keystore, hash, nHashType, scriptSigRet));
-    case TX_MLDSA65_PUBKEY:
-        return false;
 
     case TX_HYBRID_PUBKEY:
     case TX_HYBRID_PUBKEYHASH:
@@ -1738,8 +1708,6 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
         return vSolutions[0][0] + 1;
     case TX_SCRIPTHASH:
         return 1; // doesn't include args needed by the script
-    case TX_MLDSA65_PUBKEY:
-        return -1;
     case TX_HYBRID_PUBKEY:
         return 2;
     case TX_HYBRID_PUBKEYHASH:
@@ -1843,10 +1811,6 @@ isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey) {
             if(HaveKeys(keys, keystore) == keys.size())
               return(MINE_SPENDABLE);
             break;
-        }
-
-        case TX_MLDSA65_PUBKEY: {
-            return MINE_NO;
         }
 
         case TX_HYBRID_PUBKEY: {
@@ -2051,16 +2015,6 @@ bool ExtractDestinations(const CScript& scriptPubKey,
     }
 }
 
-bool VerifyMLDSA65Sig(const std::vector<unsigned char>& sig,
-                      const CMLDSA65PubKey& mlKey,
-                      const CScript& scriptPubKey,
-                      const CTransaction& tx,
-                      unsigned int nIn,
-                      int nHashType)
-{
-    return CheckHybridSig(sig, mlKey.pubkey, scriptPubKey, tx, nIn, nHashType);
-}
-
 bool VerifyScript(
     const CScript& scriptSig,
     const CScript& scriptPubKey,
@@ -2099,25 +2053,7 @@ bool VerifyScript(
             return false;
     }
 
-    // Step 4: Domain-separated MLDSA65 check
-    txnouttype type;
-    vector<valtype> vSolutions;
-    Solver(scriptPubKey, type, vSolutions);
-
-    if (type == TX_MLDSA65_PUBKEY) {
-        if (vSolutions.size() < 2)  // [sig, pubkey]
-            return false;
-
-        const std::vector<unsigned char>& sig = vSolutions[0];
-        const std::vector<unsigned char>& pubkey = vSolutions[1];
-
-        if (!CheckHybridSig(sig, pubkey, scriptPubKey, txTo, nIn, nHashType))
-            return false;
-
-        return true; // MLDSA signature verified
-    }
-
-    return true; // normal script types
+    return true;
 }
 
 // Helper function for hybrid transaction signing
@@ -2425,10 +2361,6 @@ static CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo,
         }
     case TX_MULTISIG:
         return CombineMultisig(scriptPubKey, txTo, nIn, vSolutions, sigs1, sigs2);
-    case TX_MLDSA65_PUBKEY:
-        if (sigs1.size() >= sigs2.size())
-            return PushAll(sigs1);
-        return PushAll(sigs2);
 
     // Hybrid signature types - use simple combination logic
     case TX_HYBRID_PUBKEY:
