@@ -18,12 +18,17 @@
 
 
 /**
- * ML-DSA-65 Signature Verification Module
- * 
- * Provides NIST FIPS 204 compliant ML-DSA-65 signature verification
- * for hybrid (ECDSA + ML-DSA) transaction signing.
- * 
- * Requires: OpenSSL 3.2+ with ML-DSA support (EVP_PKEY_ML_DSA_65)
+ * ML-DSA-65 Signature Verification
+ *
+ * Provides ML-DSA-65 public-key signature verification using the
+ * OpenSSL 3.x EVP interface.
+ *
+ * PhoenixCoin Quantum uses ML-DSA-65 together with ECDSA in its
+ * hybrid signature scheme. This function verifies only the ML-DSA
+ * portion of a hybrid signature; consensus validation requires both
+ * ECDSA and ML-DSA signatures to succeed.
+ *
+ * Requires OpenSSL with ML-DSA-65 support enabled.
  */
 
 // ============================================================================
@@ -31,19 +36,32 @@
 // ============================================================================
 
 /**
- * Verify ML-DSA-65 signature using OpenSSL EVP_PKEY interface
- * 
- * ML-DSA (Module-Lattice-Based Digital Signature Algorithm) is defined in
- * NIST FIPS 204 as a post-quantum signature scheme resistant to attacks
- * by both classical and quantum computers.
- * 
- * @param mldsaSig    ML-DSA-65 signature in binary format (3310 bytes)
- * @param mldsaPubKey ML-DSA-65 public key in DER format (1952 bytes)
- * @param msg         Message to verify (typically 32-byte sighash)
- * @return true if signature verifies, false if invalid or error
- * 
- * @note Uses SHA-256 internally (per FIPS 204 ML-DSA-65)
- * @note Requires OpenSSL 3.2 or later for EVP_PKEY_ML_DSA_65 support
+ * Verify an ML-DSA-65 signature.
+ *
+ * Verifies a raw ML-DSA-65 signature against the supplied message and
+ * raw ML-DSA-65 public key using OpenSSL's EVP_PKEY API.
+ *
+ * Parameters:
+ *   mldsaSig
+ *       Raw ML-DSA-65 signature bytes.
+ *
+ *   mldsaPubKey
+ *       Raw ML-DSA-65 public key bytes.
+ *
+ *   msg
+ *       Message bytes to verify. For hybrid transaction validation this
+ *       is the domain-separated hybrid message derived from the
+ *       transaction sighash.
+ *
+ * Returns:
+ *   true  - signature verified successfully.
+ *   false - verification failed or an error occurred.
+ *
+ * Notes:
+ *   - This function validates only the ML-DSA component.
+ *   - Hybrid consensus validation additionally requires successful
+ *     ECDSA verification.
+ *   - Requires OpenSSL with ML-DSA-65 support.
  */
 inline bool VerifyMLDSA(
     const std::vector<unsigned char>& mldsaSig,
@@ -143,43 +161,57 @@ extern uint256 SignatureHash(
 );
 
 /**
- * Verify complete hybrid signature (ECDSA + ML-DSA-65)
- * 
- * Both signatures must verify for the function to return true.
- * Uses domain separation to ensure security of both classical and post-quantum
- * components.
- * 
- * Stack semantics (from script):
- *   sig_ecdsa sig_mldsa pubkey_ecdsa pubkey_mldsa -- bool
- * 
- * Signature verification order:
- * 1. Validate input sizes (ECDSA: 71-73 bytes, ML-DSA: 4595 bytes)
- * 2. Verify ECDSA signature using secp256k1
- * 3. Compute transaction sighash
- * 4. Build domain-separated message
- * 5. Verify ML-DSA-65 signature
- * 6. Return success only if both signatures valid
- * 
- * @param vchSigEC      ECDSA signature (DER-encoded, 71-73 bytes)
- * @param vchSigML      ML-DSA-65 signature (4595 bytes)
- * @param vchPubKeyEC   ECDSA public key (33 bytes, compressed secp256k1)
- * @param vchPubKeyML   ML-DSA-65 public key (1950 bytes, DER format)
- * @param scriptCode    Script being executed (for codeseparator handling)
- * @param txTo          Transaction being verified
- * @param nIn           Input index in transaction
- * @param nHashType     Signature hash type (SIGHASH_ALL, etc.)
- * 
- * @return true if and only if both ECDSA and ML-DSA signatures verify
- * 
- * @note Requires both classical (ECDSA) and post-quantum (ML-DSA) components
- *       to be valid. Failure of either component causes verification to fail.
- * @note Uses domain separation: both signers sign the same sighash but via
- *       different messages, preventing cross-algorithm substitution attacks.
- * @note Security: This implementation follows hybrid signature best practices:
- *       - Sequential verification (ECDSA first, faster to reject)
- *       - Proper domain separation (different messages for each algorithm)
- *       - Comprehensive size validation
- *       - Full cleanup of OpenSSL objects
+ * Verify a hybrid transaction signature.
+ *
+ * PhoenixCoin Quantum requires every hybrid spend to be authenticated by
+ * both an ECDSA (secp256k1) signature and an ML-DSA-65 signature. Both
+ * signatures are verified over the same transaction digest, with the
+ * ML-DSA component using a domain-separated message.
+ *
+ * Script stack:
+ *     sigECDSA  sigMLDSA  pubkeyECDSA  pubkeyMLDSA  -- bool
+ *
+ * Verification sequence:
+ *   1. Verify the ECDSA signature.
+ *   2. Compute the transaction signature hash.
+ *   3. Build the domain-separated hybrid message.
+ *   4. Verify the ML-DSA-65 signature.
+ *   5. Return true only if both verifications succeed.
+ *
+ * Parameters:
+ *   vchSigEC
+ *       ECDSA signature including the sighash type byte.
+ *
+ *   vchSigML
+ *       ML-DSA-65 signature including the sighash type byte.
+ *
+ *   vchPubKeyEC
+ *       Compressed secp256k1 public key.
+ *
+ *   vchPubKeyML
+ *       Raw ML-DSA-65 public key.
+ *
+ *   scriptCode
+ *       Script used to compute the transaction signature hash.
+ *
+ *   txTo
+ *       Transaction being verified.
+ *
+ *   nIn
+ *       Input index being verified.
+ *
+ *   nHashType
+ *       Signature hash type.
+ *
+ * Returns:
+ *   true  - both ECDSA and ML-DSA verification succeeded.
+ *   false - either signature failed or an error occurred.
+ *
+ * Notes:
+ *   - Hybrid signatures are consensus-critical.
+ *   - Failure of either signature causes script verification to fail.
+ *   - Domain separation prevents cross-algorithm signature reuse between
+ *     the ECDSA and ML-DSA components.
  */
 inline bool VerifyHybridSignature(
     const std::vector<unsigned char>& vchSigEC,

@@ -95,15 +95,6 @@ struct CHybridPubKey {
     }
 };
 
-// Legacy alias for backward compatibility
-struct CMLDSA65PubKey {
-    std::vector<unsigned char> pubkey;
-
-    bool operator<(const CMLDSA65PubKey& other) const {
-        return pubkey < other.pubkey;
-    }
-};
-
 typedef boost::variant<CNoDestination, CKeyID, CScriptID, CHybridKeyID> CTxDestination;
 
 /** A virtual base class for key stores */

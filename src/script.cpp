@@ -2476,7 +2476,6 @@ class CScriptVisitor : public boost::static_visitor<bool> {
         return true;
     }
 
-#define OP_MLDSA65 0xBA
     bool operator()(const CHybridKeyID &keyID) const {
         script->clear();
         *script << OP_DUPHYBRID << OP_HASHHYBRID160 << keyID << OP_EQUALVERIFY
@@ -2562,30 +2561,12 @@ return CScript()
 }
 
 /**
- * Create Pay-to-Hybrid-Script-Hash (P2HSH) script
+ * Create an M-of-N Hybrid Multisignature output.
  *
- * Script: OP_HASH256 [SCRIPT_HASH] OP_EQUAL
- * Size: 35 bytes
- *
- * Allows complex spending conditions (multisig, time-locks, etc.)
- * with hybrid signatures
- */
-CScript GetScriptForHybridScriptHash(const uint256& scriptHash) {
-    CScript script;
-    script << OP_HASH256
-           << scriptHash
-           << OP_EQUAL;
-
-    return script;
-}
-
-/**
- * Create M-of-N Hybrid Multisignature script
- *
- * Script: OP_M [HYBRID_KEY_1] ... [HYBRID_KEY_N] OP_N OP_CHECKMULTIHYBRIDSIG
- * Size: ~1987*N + 3 bytes
- *
- * Each signature must be valid for BOTH ECDSA and ML-DSA
+ * Note:
+ * Consensus support for OP_CHECKMULTIHYBRIDSIG is implemented.
+ * This helper is currently unused by the wallet/RPC layer, but is
+ * retained for future hybrid multisig support.
  */
 CScript GetScriptForHybridMultisig(int nRequired,
                                   const std::vector<CHybridPubKey>& keys) {
@@ -2603,20 +2584,4 @@ CScript GetScriptForHybridMultisig(int nRequired,
            << OP_CHECKMULTIHYBRIDSIG;
 
     return script;
-}
-
-/**
- * Get transaction output type name for hybrid types
- */
-const char* GetHybridOutputType(txnouttype t) {
-    switch(t) {
-        case TX_HYBRID_PUBKEY:
-            return "hybrid_pubkey";
-        case TX_HYBRID_PUBKEYHASH:
-            return "hybrid_pubkeyhash";
-        case TX_HYBRID_MULTISIG:
-            return "hybrid_multisig";
-        default:
-            return NULL;
-    }
 }

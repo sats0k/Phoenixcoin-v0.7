@@ -231,7 +231,6 @@ inline std::string StackString(const std::vector<std::vector<unsigned char> >& v
 
 CScript GetScriptForHybridPubKey(const CHybridPubKey& hybridKey);
 CScript GetScriptForHybridPubKeyHash(const uint160& hash160);
-CScript GetScriptForHybridScriptHash(const uint256& scriptHash);
 CScript GetScriptForHybridMultisig(
     int nRequired,
     const std::vector<CHybridPubKey>& keys);
