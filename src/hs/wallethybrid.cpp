@@ -88,15 +88,13 @@ void GenerateHybridKey(CHybridKey& hk)
 
 std::unique_ptr<MLDSASigner> GetSignerFromKey(const CHybridKey& hk)
 {
-    if (!hk.mldsaSigner) {
-        printf("Hybrid key has no MLDSA signer\n");
+    if (!hk.mldsaSigner)
         return nullptr;
-    }
+
     EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
-    if (!pkey) {
-        printf("MLDSASigner contains no key\n");
+    if (!pkey)
         return nullptr;
-    }
+
     EVP_PKEY_up_ref(pkey);
     return std::make_unique<MLDSASigner>(pkey);
 }

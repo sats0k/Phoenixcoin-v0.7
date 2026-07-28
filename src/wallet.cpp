@@ -1341,6 +1341,27 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> > &vecSend, CW
                 if(!SelectCoins(nTotalValue, setCoins, nValueIn, coinControl))
                   return(false);
 
+                bool fHybridChange = false;
+
+                BOOST_FOREACH(const PAIRTYPE(const CWalletTx*, uint)& coin, setCoins)
+                {
+                   const CTxOut& prevout = coin.first->vout[coin.second];
+
+                    txnouttype whichType;
+                    vector<vector<unsigned char> > vSolutions;
+
+                    if (Solver(prevout.scriptPubKey, whichType, vSolutions))
+                    {
+                        if (whichType == TX_HYBRID_PUBKEY ||
+                            whichType == TX_HYBRID_PUBKEYHASH ||
+                            whichType == TX_HYBRID_MULTISIG)
+                        {
+                            fHybridChange = true;
+                            break;
+                        }
+                    }
+                }
+
                 BOOST_FOREACH(PAIRTYPE(const CWalletTx *, uint) pcoin, setCoins) {
                     int64 nCredit = pcoin.first->vout[pcoin.second].nValue;
                     dPriority += (double)nCredit * pcoin.first->GetDepthInMainChain();
@@ -1376,10 +1397,20 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> > &vecSend, CW
  * post-backup change. */
 
                         /* Reserve a new key pair from the key pool */
-                        CPubKey vchPubKey = reservekey.GetReservedKey();
+                        if (fHybridChange)
+                        {
+                            CHybridKeyID hybridID;
 
-                        scriptChange.SetDestination(vchPubKey.GetID());
+                            if (!GetUnusedHybridKey(hybridID))
+                                return false;
 
+                            scriptChange.SetDestination(hybridID);
+                        }
+                        else
+                        {
+                            CPubKey vchPubKey = reservekey.GetReservedKey();
+                            scriptChange.SetDestination(vchPubKey.GetID());
+                        }
                     }
 
                     // Insert change txn at random position:
@@ -1583,8 +1614,105 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nVal
     return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee);
 }
 
+bool CWallet::EnsureHybridKeyPool(unsigned int nTarget)
+{
+    LOCK(cs_wallet);
 
+    if (IsLocked())
+        return false;
 
+    if (mapHybridKeys.size() >= nTarget)
+        return true;
+
+    CWalletDB walletdb(strWalletFile);
+
+    while (mapHybridKeys.size() < nTarget)
+    {
+        CHybridKey hybridKey;
+
+        try
+        {
+            GenerateHybridKey(hybridKey);
+
+            if (!ValidateHybridKey(hybridKey))
+                throw std::runtime_error("invalid hybrid key");
+        }
+        catch (const std::exception& e)
+        {
+            printf("EnsureHybridKeyPool(): %s\n", e.what());
+            return false;
+        }
+
+        // Store legacy ECDSA key
+        if (!AddKey(hybridKey.GetCKey()))
+            return false;
+
+        CHybridKeyID hybridID = hybridKey.GetHybridID();
+
+        mapHybridKeys.emplace(hybridID, std::move(hybridKey));
+
+        auto it = mapHybridKeys.find(hybridID);
+
+        std::unique_ptr<MLDSASigner> signer =
+            GetSignerFromKey(it->second);
+
+        if (!signer)
+            return false;
+
+        mapHybridSigners.emplace(hybridID, std::move(signer));
+
+        CHybridKeyDisk disk =
+            CHybridKeyDisk::FromMemory(it->second);
+
+        if (!walletdb.WriteHybridKey(hybridID, disk))
+            return false;
+
+        setUnusedHybridKeys.insert(hybridID);
+    }
+
+    return true;
+}
+
+bool CWallet::RebuildUnusedHybridKeySet()
+{
+    LOCK(cs_wallet);
+
+    setUnusedHybridKeys.clear();
+
+    for (const auto& it : mapHybridKeys)
+    {
+        setUnusedHybridKeys.insert(it.first);
+    }
+
+    return true;
+
+    // TODO:
+    // RebuildUnusedHybridKeySet() currently assumes every stored hybrid key
+    // is unused after wallet restart. This may cause previously issued receive
+    // addresses to be reused. Funds remain safe, but address reuse reduces
+    // privacy. A persistent "used" flag should be added in a future revision.
+}
+
+bool CWallet::GetUnusedHybridKey(CHybridKeyID& hybridID)
+{
+    LOCK(cs_wallet);
+
+    // Top up when running low.
+    if (setUnusedHybridKeys.size() < 5)
+    {
+        if (!EnsureHybridKeyPool(mapHybridKeys.size() + 20))
+            return false;
+    }
+
+    if (setUnusedHybridKeys.empty())
+        return false;
+
+    // Allocate the oldest unused key.
+    hybridID = *setUnusedHybridKeys.begin();
+    setUnusedHybridKeys.erase(setUnusedHybridKeys.begin());
+
+    return true;
+}
 
 DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
 {
@@ -1607,6 +1735,8 @@ DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
         return nLoadWalletRet;
 
     LoadHybridKeys();
+    EnsureHybridKeyPool();
+    RebuildUnusedHybridKeySet();
 
     fFirstRunRet = !vchDefaultKey.IsValid();
 

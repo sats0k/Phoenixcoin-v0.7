@@ -90,11 +90,15 @@ public:
     mutable CCriticalSection cs_wallet;
 
     bool EnsureHybridKey(const CKeyID& keyID);
+    bool EnsureHybridKeyPool(unsigned int nTarget = 20);
+    bool RebuildUnusedHybridKeySet();
+    bool GetUnusedHybridKey(CHybridKeyID& hybridID);
     bool fFillingKeyPool;
     void LoadHybridKeys();
 
     std::map<CHybridKeyID, CHybridKey> mapHybridKeys;
     std::map<CHybridKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
+    std::set<CHybridKeyID> setUnusedHybridKeys;
 
     // ===== Hybrid key access methods (override from CKeyStore) =====
     bool HaveHybridKey(const CHybridKeyID &address) const override;
