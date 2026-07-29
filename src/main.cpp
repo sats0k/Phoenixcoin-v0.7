@@ -526,11 +526,6 @@ int64 CTransaction::GetMinFee(uint nBytes, bool fAllowFree,
     int64 nKb = (nBytes + 999) / 1000;  // ceil to next KB
     int64 nMinFee = nKb * nBaseFee;
 
-    // Optional: discount for larger txs (hybrid / multisig)
-    if (nBytes > 5000) {
-        nMinFee /= 5;
-    }
-
     // Optional: cap fee to prevent absurd overpayment
     const int64 nMaxFee = 50000000; // 50M units max
     if (nMinFee > nMaxFee)

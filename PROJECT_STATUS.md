@@ -58,17 +58,10 @@ Testing on a fresh Quantum blockchain shows:
 
 Compatibility with external mining software remains to be investigated.
 
-### Known Bugs
-
-- Only one hybrid transaction is included per mined block, even when additional valid transactions are present in the mempool.
-
-This appears to be a block assembly/mining issue rather than a consensus or signature verification problem.
-
 ## Next Phase
 
 Remaining work focuses on:
 
-- Fix block assembly to allow multiple hybrid transactions per block.
 - Investigate compatibility with external CPU miners.
 - Investigate compatibility with external GPU miners.
 - Define the Quantum hard fork height.
@@ -79,4 +72,4 @@ Remaining work focuses on:
 
 The hybrid cryptographic implementation is complete and operational.
 
-The remaining work is primarily related to mining, block assembly, external miner compatibility, and deployment of the Quantum network through a coordinated hard fork.
+The remaining work is primarily related to external miner compatibility, and deployment of the Quantum network through a coordinated hard fork.
