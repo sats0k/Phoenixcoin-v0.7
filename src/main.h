@@ -32,6 +32,11 @@ class CInv;
 class CRequestTracker;
 class CNode;
 
+// Hybrid consensus activation
+static const int HYBRID_ACTIVATION_HEIGHT = 0;
+
+bool IsHybridConsensusActive();
+
 /* Maturity threshold for PoW base transactions, in blocks (confirmations) */
 extern int nBaseMaturity;
 static const int BASE_MATURITY = 100;
@@ -42,7 +47,7 @@ static const int BASE_MATURITY_OFFSET = 1;
 static const int TX_MATURITY = 6;
 
 /* The max. allowed size for a serialised block, in bytes */
-static const uint MAX_BLOCK_SIZE = 524288;
+static const uint MAX_BLOCK_SIZE = 1000000;
 /* The max. allowed size for a mined block, in bytes */
 static const uint MAX_BLOCK_SIZE_GEN = (MAX_BLOCK_SIZE >> 1);
 /* The max. allowed number of signature check operations per block */
@@ -54,9 +59,9 @@ static const unsigned int MAX_INV_SZ = 50000;
 /* The current time frame of block limiter */
 static const int64 BLOCK_LIMITER_TIME = 120;
 /* The min. transaction fee if required */
-static const int64 MIN_TX_FEE = 10000000;
+static const int64 MIN_TX_FEE = 1000000;
 /* Fees below this value are considered absent while relaying */
-static const int64 MIN_RELAY_TX_FEE = 5000000;
+static const int64 MIN_RELAY_TX_FEE = 100000;
 /* The dust threshold */
 static const int64 TX_DUST = 1000000;
 /* The max. amount for a single transaction */

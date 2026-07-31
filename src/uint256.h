@@ -334,14 +334,24 @@ public:
         return (GetHex());
     }
 
-    unsigned char* begin() const
+    unsigned char* begin()
     {
-        return (unsigned char*)&pn[0];
+        return reinterpret_cast<unsigned char*>(&pn[0]);
+    }
+
+    const unsigned char* begin() const
+    {
+        return reinterpret_cast<const unsigned char*>(&pn[0]);
     }
 
     unsigned char* end()
     {
-        return (unsigned char*)&pn[WIDTH];
+        return reinterpret_cast<unsigned char*>(&pn[WIDTH]);
+    }
+
+    const unsigned char* end() const
+    {
+        return reinterpret_cast<const unsigned char*>(&pn[WIDTH]);
     }
 
     unsigned int size()

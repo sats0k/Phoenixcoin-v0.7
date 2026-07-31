@@ -41,6 +41,9 @@ enum txnouttype
     TX_PUBKEYHASH,
     TX_SCRIPTHASH,
     TX_MULTISIG,
+    TX_HYBRID_PUBKEY,           // P2PH: <ECDSA_PUBKEY> <MLDSA_PUBKEY> OP_CHECKHYBRIDSIG
+    TX_HYBRID_PUBKEYHASH,       // P2HPKH: OP_DUP OP_HASH256 <HASH> OP_EQUALVERIFY OP_CHECKHYBRIDSIG
+    TX_HYBRID_MULTISIG,         // M-of-N hybrid multisig
 };
 
 const char* GetTxnOutputType(txnouttype t);
@@ -180,7 +183,12 @@ enum opcodetype
     OP_NOP9 = 0xb8,
     OP_NOP10 = 0xb9,
 
-
+    // Hybrid signature operations (Post-Quantum)
+    OP_CHECKHYBRIDSIG = 0xbc,           // Single hybrid signature check
+    OP_CHECKHYBRIDSIGVERIFY = 0xbd,    // With VERIFY
+    OP_CHECKMULTIHYBRIDSIG = 0xbe,     // M-of-N hybrid multisig
+    OP_HASHHYBRID160 = 0xbf,
+    OP_DUPHYBRID = 0xca,
 
     // template matching params
     OP_SMALLINTEGER = 0xfa,
@@ -217,6 +225,15 @@ inline std::string StackString(const std::vector<std::vector<unsigned char> >& v
 
 
 
+// ---------------------------------------------------------------------
+// Hybrid script helpers
+// ---------------------------------------------------------------------
+
+CScript GetScriptForHybridPubKey(const CHybridPubKey& hybridKey);
+CScript GetScriptForHybridPubKeyHash(const uint160& hash160);
+CScript GetScriptForHybridMultisig(
+    int nRequired,
+    const std::vector<CHybridPubKey>& keys);
 
 
 
@@ -318,8 +335,8 @@ public:
 
     CScript& operator<<(const uint160& b)
     {
-        insert(end(), sizeof(b));
-        insert(end(), (unsigned char*)&b, (unsigned char*)&b + sizeof(b));
+        insert(end(), 20);
+        insert(end(), b.begin(), b.end());
         return *this;
     }
 

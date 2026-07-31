@@ -1,0 +1,110 @@
+# PhoenixCoin Quantum – Project Status
+
+## Current Status
+
+The hybrid post-quantum transaction layer is implemented and functioning.
+
+Implemented components include:
+
+- Hybrid wallet key generation (ECDSA + ML-DSA-65)
+- CHybridKeyID address format
+- Hybrid address generation
+- Hybrid transaction signing
+- Hybrid transaction verification
+- OP_DUPHYBRID
+- OP_HASHHYBRID160
+- OP_CHECKHYBRIDSIG
+- Hybrid P2PKH scripts
+- Hybrid P2PK scripts
+- Hybrid multisignature support
+- OpenSSL ML-DSA-65 verification
+- Signature cache compatibility
+- Wallet import compatibility (`wallet.dat`, `importprivkey`)
+- Legacy transaction compatibility
+- Hybrid wallet key pool
+- Automatic hybrid change address support
+- Hybrid address book support
+- Hybrid key persistence in `wallet.dat`
+- Hybrid transaction creation and coin selection support
+
+## Verification
+
+Testing on a fresh Quantum blockchain confirms that:
+
+- Valid hybrid transactions are accepted.
+- Corrupting a single byte of the ECDSA signature causes verification failure.
+- Corrupting a single byte of the ML-DSA signature causes verification failure.
+- Corrupting the ML-DSA public key causes verification failure.
+- Both signatures are mandatory; there is no legacy fallback.
+- Legacy transactions continue to verify using the original ECDSA path.
+- Legacy-to-hybrid transactions confirm successfully.
+- Hybrid-to-hybrid transactions confirm successfully.
+- Hybrid change outputs are generated correctly.
+- Multiple hybrid transactions can be included in the same block.
+- Hybrid transactions propagate and validate normally across the network.
+- Hybrid transactions are mined successfully by both internal and external miners.
+
+## Consensus
+
+The Quantum client is **not consensus-compatible** with the historical PhoenixCoin network.
+
+Legacy nodes do not recognize:
+
+- OP_DUPHYBRID
+- OP_HASHHYBRID160
+- OP_CHECKHYBRIDSIG
+- Hybrid output types
+
+A coordinated hard fork is therefore required for network deployment.
+
+## Mining
+
+Testing on a fresh Quantum blockchain confirms:
+
+- The built-in CPU miner successfully mines hybrid transactions.
+- External CPU miners successfully mine hybrid transactions.
+- External GPU miners successfully mine hybrid transactions.
+- P2Pool successfully mines hybrid transactions.
+- Hybrid transactions require no miner-side modifications.
+- Hybrid transactions require no P2Pool modifications.
+- Hybrid transaction validation remains entirely consensus-side.
+- Existing mining infrastructure remains compatible after the Quantum fork.
+
+## Current Limitations
+
+### Network Deployment
+
+The Quantum client requires a coordinated hard fork before deployment on an existing PhoenixCoin network.
+
+Historical PhoenixCoin nodes will reject Quantum blocks because they do not understand the new hybrid opcodes and script types.
+
+### Wallet Features
+
+Future improvements may still include:
+
+- Hybrid key usage tracking (`fUsed`)
+- Hybrid key export/import improvements
+- Additional wallet recovery tools
+- Additional RPC functionality
+- User interface integration
+
+These items are wallet improvements only and do not affect consensus.
+
+## Next Phase
+
+Remaining work focuses on:
+
+- Define the Quantum hard fork height.
+- Finalize wallet usability improvements.
+- Expand automated consensus and regression testing.
+- Release Quantum node software.
+- Release updated wallet binaries.
+- Coordinate network activation.
+
+## Summary
+
+The hybrid cryptographic implementation is complete and operational.
+
+Hybrid transactions are fully functional, consensus-enforced, wallet-supported, and successfully mined by the internal miner, external miners, and P2Pool without requiring modifications to mining software.
+
+The remaining work is primarily related to wallet improvements, testing, release preparation, and coordinated network deployment through a hard fork.

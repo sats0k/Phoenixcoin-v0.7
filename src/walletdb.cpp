@@ -17,6 +17,7 @@
 #include "base58.h"
 #include "walletdb.h"
 #include "wallet.h"
+#include "hs/wallethybrid.h"
 
 using namespace std;
 using namespace boost;
@@ -26,6 +27,45 @@ static uint64 nAccountingEntryNumber = 0;
 //
 // CWalletDB
 //
+
+bool CWalletDB::LoadAllHybridKeys(std::vector<CHybridKeyDisk> &vKeys)
+{
+    vKeys.clear();
+    Dbc* pcursor = GetCursor();
+    if (!pcursor) return false;
+
+    while (true) {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION);
+        int ret = ReadAtCursor(pcursor, ssKey, ssValue);
+        if (ret == DB_NOTFOUND) break;
+        if (ret != 0) return false;
+
+        std::string strType;
+        ssKey >> strType;
+        if (strType != "hyb") continue; // must match write prefix
+
+        CKeyID keyID;
+        ssKey >> keyID;
+
+        CHybridKeyDisk disk;
+        ssValue >> disk;
+
+        vKeys.push_back(disk);
+    }
+
+    pcursor->close();
+    return true;
+}
+
+bool CWalletDB::WriteHybridKey(const CHybridKeyID &keyID, const CHybridKeyDisk &disk)
+{
+    return Write(std::make_pair(std::string("hyb"), keyID), disk);
+}
+
+bool CWalletDB::WriteHybridKeyMetadata(const CHybridKeyID& keyid, const CHybridKeyMetadata& meta)
+{
+    return Write(std::make_pair(std::string("hybridkeymeta"), keyid), meta);
+}
 
 bool CWalletDB::WriteName(const string& strAddress, const string& strName)
 {
@@ -498,8 +538,12 @@ DBErrors CWalletDB::LoadWallet(CWallet *pwallet) {
     printf("Keys: %u plaintext, %u encrypted, %u with metadata, %u total\n",
            wss.nKeys, wss.nCKeys, wss.nKeyMeta, wss.nKeys + wss.nCKeys);
 
-    if((wss.nKeys + wss.nCKeys) != wss.nKeyMeta)
+    if((wss.nKeys + wss.nCKeys) != wss.nKeyMeta) {
       pwallet->UpdateTimeFirstKey();
+    }
+
+    // Load hybrid address book
+    pwallet->LoadHybridAddressBook();
 
     BOOST_FOREACH(uint256 hash, wss.vWalletUpgrade)
       WriteTx(hash, pwallet->mapWallet[hash]);
@@ -589,8 +633,6 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 // Flush log data to the dat file
                 bitdb.CloseDb(wallet.strWalletFile);
                 bitdb.CheckpointLSN(wallet.strWalletFile);
-                printf("Issuing Log Sequence Number reset for backup file portability.\n");
-                bitdb.lsn_reset(wallet.strWalletFile);
                 bitdb.mapFileUseCount.erase(wallet.strWalletFile);
 
                 // Copy wallet.dat
@@ -599,15 +641,8 @@ bool BackupWallet(const CWallet& wallet, const string& strDest)
                 if(boost::filesystem::is_directory(pathDest)) pathDest /= wallet.strWalletFile;
 
                 try {
-#if (BOOST_VERSION >= 107400)
                     boost::filesystem::copy_file(pathSrc, pathDest,
-                      boost::filesystem::copy_options::overwrite_existing);
-#elif (BOOST_VERSION >= 104000)
-                    boost::filesystem::copy_file(pathSrc, pathDest,
-                      boost::filesystem::copy_option::overwrite_if_exists);
-#else
-                    boost::filesystem::copy_file(pathSrc, pathDest);
-#endif
+                     boost::filesystem::copy_options::overwrite_existing);
                     printf("copied wallet.dat to %s\n", pathDest.string().c_str());
                     return true;
                 } catch(const boost::filesystem::filesystem_error &e) {

@@ -11,11 +11,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ip/v6_only.hpp>
 #include <boost/asio/connect.hpp>
-#if (BOOST_VERSION >= 107100)
 #include <boost/bind/bind.hpp>
-#else
-#include <boost/bind.hpp>
-#endif
 #include <boost/filesystem.hpp>
 #include <boost/foreach.hpp>
 #include <boost/iostreams/concepts.hpp>
@@ -318,7 +314,6 @@ static const CRPCCommand vRPCCommands[] =
     { "decoderawtransaction",   &decoderawtransaction,   false,  false },
     { "signrawtransaction",     &signrawtransaction,     false,  false },
     { "sendrawtransaction",     &sendrawtransaction,     false,  false },
-    { "listunspent",            &listunspent,            false,  false },
     { "ntptime",                &ntptime,                true,   false },
     { "resendtx",               &resendtx,               false,  true  },
     { "makekeypair",            &makekeypair,            false,  true  },
@@ -326,6 +321,10 @@ static const CRPCCommand vRPCCommands[] =
     { "decryptmessage",         &decryptmessage,         false,  false },
     { "encryptdata",            &encryptdata,            false,  false },
     { "decryptdata",            &decryptdata,            false,  false },
+    { "dumphybridkey",          &dumphybridkey,          false,  false },
+    { "gethybridaddress",       &gethybridaddress,       false,  false },
+    { "listhybridaddresses",    &listhybridaddresses,    false,  false },
+    { "gethybridkey",           &gethybridkey,           false,  false },
 };
 
 CRPCTable::CRPCTable()
@@ -634,11 +633,7 @@ public:
         return asio::write(stream.next_layer(), asio::buffer(s, n));
     }
     bool connect(const std::string &server, const std::string &port) {
-#if (BOOST_VERSION >= 107000)
         ip::tcp::resolver resolver((boost::asio::io_context &)(stream.get_executor().context()));
-#else
-        ip::tcp::resolver resolver(stream.get_io_service());
-#endif
         ip::tcp::resolver::results_type endpoints = resolver.resolve(server.c_str(), port.c_str());
         ip::tcp::resolver::results_type end;
         boost::system::error_code error = asio::error::host_not_found;
@@ -727,13 +722,8 @@ void ThreadRPCServer(void* parg)
 }
 
 // Forward declaration required for RPCListen
-#if (BOOST_VERSION > 106501)
 template <typename Protocol>
 static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol> > acceptor,
-#else
-template <typename Protocol, typename SocketAcceptorService>
-static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
-#endif
                              ssl::context& context,
                              bool fUseSSL,
                              AcceptedConnection* conn,
@@ -742,32 +732,19 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, 
 /**
  * Sets up I/O resources to accept and handle a new connection.
  */
-#if (BOOST_VERSION > 106501)
 template <typename Protocol>
 static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol> > acceptor,
-#else
-template <typename Protocol, typename SocketAcceptorService>
-static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
-#endif
                    ssl::context& context,
                    const bool fUseSSL)
 {
     // Accept connection
     AcceptedConnectionImpl<Protocol> *conn = new AcceptedConnectionImpl<Protocol>
-#if (BOOST_VERSION >= 107000)
       ((boost::asio::io_context &)(acceptor->get_executor().context()), context, fUseSSL);
-#else
-      (acceptor->get_io_service(), context, fUseSSL);
-#endif
 
     acceptor->async_accept(
             conn->sslStream.lowest_layer(),
             conn->peer,
-#if (BOOST_VERSION > 106501)
             boost::bind(&RPCAcceptHandler<Protocol>,
-#else
-            boost::bind(&RPCAcceptHandler<Protocol, SocketAcceptorService>,
-#endif
 
                 acceptor,
                 boost::ref(context),
@@ -779,13 +756,8 @@ static void RPCListen(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketA
 /**
  * Accept and handle incoming connection.
  */
-#if (BOOST_VERSION > 106501)
 template <typename Protocol>
 static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol> > acceptor,
-#else
-template <typename Protocol, typename SocketAcceptorService>
-static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol, SocketAcceptorService> > acceptor,
-#endif
                              ssl::context& context,
                              const bool fUseSSL,
                              AcceptedConnection* conn,
@@ -856,43 +828,25 @@ void ThreadRPCServer2(void* parg)
     }
 
     const bool fUseSSL = GetBoolArg("-rpcssl");
-
     asio::io_context io_context;
-
-#if (BOOST_VERSION > 106501)
     ssl::context context(ssl::context::sslv23);
-#else
-    ssl::context context(io_context, ssl::context::sslv23);
-#endif
     if (fUseSSL)
     {
         context.set_options(ssl::context::no_sslv2);
 
         boost::filesystem::path pathCertFile(GetArg("-rpcsslcertificatechainfile", "server.cert"));
-#if (BOOST_VERSION >= 105000)
         if(!pathCertFile.is_absolute()) pathCertFile = boost::filesystem::path(GetDataDir()) / pathCertFile;
-#else
-        if(!pathCertFile.is_complete()) pathCertFile = boost::filesystem::path(GetDataDir()) / pathCertFile;
-#endif
         if(boost::filesystem::exists(pathCertFile)) context.use_certificate_chain_file(pathCertFile.string());
         else printf("ThreadRPCServer ERROR: missing server certificate file %s\n", pathCertFile.string().c_str());
 
         boost::filesystem::path pathPKFile(GetArg("-rpcsslprivatekeyfile", "server.pem"));
-#if (BOOST_VERSION >= 105000)
         if(!pathPKFile.is_absolute()) pathPKFile = boost::filesystem::path(GetDataDir()) / pathPKFile;
-#else
-        if(!pathPKFile.is_complete()) pathPKFile = boost::filesystem::path(GetDataDir()) / pathPKFile;
-#endif
         if(boost::filesystem::exists(pathPKFile)) context.use_private_key_file(pathPKFile.string(), ssl::context::pem);
         else printf("ThreadRPCServer ERROR: missing server private key file %s\n", pathPKFile.string().c_str());
 
         string strCiphers = GetArg("-rpcsslciphers", "TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!AH:!3DES:@STRENGTH");
 
-#if (BOOST_VERSION > 106501)
         SSL_CTX_set_cipher_list(context.native_handle(), strCiphers.c_str());
-#else
-        SSL_CTX_set_cipher_list(context.impl(), strCiphers.c_str());
-#endif
     }
 
     // Try a dual IPv6/IPv4 socket, falling back to separate IPv4 and IPv6 sockets
@@ -1185,13 +1139,7 @@ Object CallRPC(const string &strMethod, const Array &params) {
     // Connect to localhost
     bool fUseSSL = GetBoolArg("-rpcssl");
     asio::io_context io_context;
-
-#if (BOOST_VERSION > 106501)
     ssl::context context(ssl::context::sslv23);
-#else
-    ssl::context context(io_service, ssl::context::sslv23);
-#endif
-
     context.set_options(ssl::context::no_sslv2);
     asio::ssl::stream<asio::ip::tcp::socket> sslStream(io_context, context);
     SSLIOStreamDevice<asio::ip::tcp> d(sslStream, fUseSSL);
@@ -1302,8 +1250,6 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "createrawtransaction"   && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "signrawtransaction"     && n > 1) ConvertTo<Array>(params[1], true);
     if (strMethod == "signrawtransaction"     && n > 2) ConvertTo<Array>(params[2], true);
-    if (strMethod == "lockunspent"            && n > 0) ConvertTo<bool>(params[0]);
-    if (strMethod == "lockunspent"            && n > 1) ConvertTo<Array>(params[1]);
     if (strMethod == "getnetworkhashps"       && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if((strMethod == "getaddednodeinfo")      && (n > 0)) ConvertTo<bool>(params[0]);
     if((strMethod == "importprivkey")         && (n > 2)) ConvertTo<bool>(params[2]);

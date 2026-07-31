@@ -29,6 +29,11 @@ using namespace boost;
 
 extern CWallet *pwalletMain;
 
+bool IsHybridConsensusActive()
+{
+    return nBestHeight >= HYBRID_ACTIVATION_HEIGHT;
+}
+
 //
 // Global state
 //
@@ -300,14 +305,21 @@ bool CTransaction::IsStandard() const
         // Biggest 'standard' txin is a 3-signature 3-of-3 CHECKMULTISIG
         // pay-to-script-hash, which is 3 ~80-byte signatures, 3
         // ~65-byte public keys, plus a few script ops.
-        if (txin.scriptSig.size() > 500)
+        if (txin.scriptSig.size() > 200000)
             return false;
         if (!txin.scriptSig.IsPushOnly())
             return false;
     }
-    BOOST_FOREACH(const CTxOut& txout, vout) {
+    BOOST_FOREACH(const CTxOut& txout, vout)
+    {
+        std::vector<std::vector<unsigned char> > vSolutions;
+        txnouttype whichType;
+
+        Solver(txout.scriptPubKey, whichType, vSolutions);
+
         if (!::IsStandard(txout.scriptPubKey))
             return false;
+
         if (txout.nValue == 0)
             return false;
     }
@@ -350,8 +362,6 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
         // beside "push data" in the scriptSig the
         // IsStandard() call returns false
         vector<vector<unsigned char> > stack;
-        if (!EvalScript(stack, vin[i].scriptSig, *this, i, 0))
-            return false;
 
         if (whichType == TX_SCRIPTHASH)
         {
@@ -372,7 +382,10 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
             nArgsExpected += tmpExpected;
         }
 
-        if (stack.size() != (unsigned int)nArgsExpected)
+        if (!EvalScript(stack, vin[i].scriptSig, *this, i, 0))
+            return false;
+
+        if (stack.size() != (unsigned)nArgsExpected)
             return false;
     }
 
@@ -487,7 +500,7 @@ bool CTransaction::CheckTransaction() const
 
     if (IsCoinBase())
     {
-        if (vin[0].scriptSig.size() < 2 || vin[0].scriptSig.size() > 100)
+        if (vin[0].scriptSig.size() < 2 || vin[0].scriptSig.size() > 200000)
             return DoS(100, error("CTransaction::CheckTransaction() : coinbase script size"));
     }
     else
@@ -506,23 +519,32 @@ int64 CTransaction::GetMinFee(uint nBytes, bool fAllowFree,
     // Base fee is either MIN_TX_FEE or MIN_RELAY_TX_FEE
     int64 nBaseFee = (mode == GMF_RELAY) ? MIN_RELAY_TX_FEE : MIN_TX_FEE;
 
+    // New block size for fee calculation
     uint nNewBlockSize = (mode == GMF_SEND) ? nBytes : 1000 + nBytes;
-    int64 nMinFee = (1 + (int64)nBytes / 1000) * nBaseFee;
 
+    // Compute fee per KB
+    int64 nKb = (nBytes + 999) / 1000;  // ceil to next KB
+    int64 nMinFee = nKb * nBaseFee;
+
+    // Optional: cap fee to prevent absurd overpayment
+    const int64 nMaxFee = 50000000; // 50M units max
+    if (nMinFee > nMaxFee)
+        nMinFee = nMaxFee;
+
+    // Allow free txs under certain limits
     if(fAllowFree) {
         if(mode == GMF_SEND) {
             /* Limit size of free high priority transactions */
             if(nBytes < 2000) nMinFee = 0;
         } else {
-            /* GMF_BLOCK, GMF_RELAY:
-             * Limit block space for free transactions */
+            /* GMF_BLOCK, GMF_RELAY: limit block space for free txs */
             if(nNewBlockSize < 11000) nMinFee = 0;
         }
     }
 
     /* Dust spam filter: require a base fee for any micro output */
     BOOST_FOREACH(const CTxOut &txout, vout)
-      if(txout.nValue < TX_DUST) nMinFee += nBaseFee;
+        if(txout.nValue < TX_DUST) nMinFee += nBaseFee;
 
     // Raise the price as the block approaches full
     if((mode != GMF_SEND) && (nNewBlockSize >= MAX_BLOCK_SIZE_GEN / 2)) {
@@ -533,6 +555,7 @@ int64 CTransaction::GetMinFee(uint nBytes, bool fAllowFree,
 
     return(nMinFee);
 }
+
 
 
 bool CTxMemPool::accept(CTxDB& txdb, CTransaction &tx, bool fCheckInputs,
@@ -1466,12 +1489,8 @@ bool CTransaction::ConnectInputs(MapPrevTx inputs,
                 // Verify signature
                 if (!VerifySignature(txPrev, *this, i, fStrictPayToScriptHash, 0))
                 {
-                    // only during transition phase for P2SH: do not invoke anti-DoS code for
-                    // potentially old clients relaying bad P2SH transactions
-                    if (fStrictPayToScriptHash && VerifySignature(txPrev, *this, i, false, 0))
-                        return error("ConnectInputs() : %s P2SH VerifySignature failed", GetHash().ToString().substr(0,10).c_str());
-
-                    return DoS(100,error("ConnectInputs() : %s VerifySignature failed", GetHash().ToString().substr(0,10).c_str()));
+                    return DoS(100,
+                        error("ConnectInputs() : VerifySignature failed"));
                 }
             }
 
@@ -4031,7 +4050,7 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     ++nExtraNonce;
     unsigned int nHeight = pindexPrev->nHeight+1; // Height first in coinbase required for block.version=2
     pblock->vtx[0].vin[0].scriptSig = (CScript() << nHeight << CBigNum(nExtraNonce)) + COINBASE_FLAGS;
-    assert(pblock->vtx[0].vin[0].scriptSig.size() <= 100);
+    assert(pblock->vtx[0].vin[0].scriptSig.size() <= 200000);
 
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }

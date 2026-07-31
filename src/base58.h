@@ -21,8 +21,11 @@
 #include "bignum.h"
 #include "key.h"
 #include "script.h"
-#include "allocators.h"
- 
+
+/* Address version constants */
+static constexpr uint8_t HYBRID_ADDRESS_VERSION = 0x3A;        // Mainnet P2PH
+static constexpr uint8_t HYBRID_ADDRESS_TEST_VERSION = 0x6A;   // Testnet P2PH
+
 /* P2PK and P2PKH addresses begin with 'P' */
 const uchar PUBKEY_ADDRESS_PREFIX = 0x38;
 
@@ -57,11 +60,7 @@ inline std::string EncodeBase58(const unsigned char* pbegin, const unsigned char
     CBigNum dv;
     CBigNum rem;
     while(bn > bn0) {
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-        if(!BN_div(&dv, &rem, &bn, &bn58, pctx))
-#else
         if(!BN_div(dv.get(), rem.get(), bn.cget(), bn58.cget(), pctx))
-#endif
           throw(bignum_error("EncodeBase58 : BN_div() failed"));
         bn = dv;
         uint c = rem.getuint();
@@ -101,11 +100,7 @@ inline bool DecodeBase58(const char* psz, std::vector<unsigned char>& vchRet) {
             break;
         }
         bnChar.setuint(p1 - pszBase58);
-#if (OPENSSL_VERSION_NUMBER < 0x10100000L)
-        if(!BN_mul(&bn, &bn, &bn58, pctx))
-#else
         if(!BN_mul(bn.get(), bn.cget(), bn58.cget(), pctx))
-#endif
           throw(bignum_error("DecodeBase58 : BN_mul() failed"));
         bn += bnChar;
     }
@@ -170,8 +165,7 @@ protected:
     unsigned char nVersion;
 
     // the actually encoded data
-    typedef std::vector<unsigned char, zero_after_free_allocator<unsigned char> > vector_uchar;
-    vector_uchar vchData;
+    std::vector<unsigned char> vchData;
 
     CBase58Data() {
         nVersion = 0;
@@ -262,7 +256,8 @@ public:
     CCoinAddressVisitor(CCoinAddress *addrIn) : addr(addrIn) { }
     bool operator()(const CKeyID &id) const;
     bool operator()(const CScriptID &id) const;
-    bool operator()(const CNoDestination &no) const;
+    bool operator()(const CNoDestination &) const;
+    bool operator()(const CHybridKeyID &id) const;
 };
 
 class CCoinAddress : public CBase58Data {
@@ -272,6 +267,8 @@ public:
         SCRIPT_ADDRESS = SCRIPT_ADDRESS_PREFIX,
         PUBKEY_ADDRESS_TEST = PUBKEY_ADDRESS_TEST_PREFIX,
         SCRIPT_ADDRESS_TEST = SCRIPT_ADDRESS_TEST_PREFIX,
+        HYBRID_ADDRESS = HYBRID_ADDRESS_VERSION,
+        HYBRID_ADDRESS_TEST = HYBRID_ADDRESS_TEST_VERSION,
     };
 
     bool Set(const CKeyID &id) {
@@ -286,6 +283,13 @@ public:
 
     bool Set(const CTxDestination &dest) {
         return(boost::apply_visitor(CCoinAddressVisitor(this), dest));
+    }
+
+    /* Hybrid address support */
+    bool Set(const CHybridKeyID& id) {
+        SetData(fTestNet ? HYBRID_ADDRESS_TEST : HYBRID_ADDRESS,
+                (const unsigned char*)&id, 20);
+        return true;
     }
 
     bool IsValid() const {
@@ -308,6 +312,15 @@ public:
                 nExpectedSize = 20;
                 break;
             case(SCRIPT_ADDRESS_TEST):
+                fExpectTestNet = true;
+                nExpectedSize = 20;
+                break;
+            case(HYBRID_ADDRESS):
+                /* Hybrid address = Hash160(serialized hybrid public key) */
+                fExpectTestNet = false;
+                nExpectedSize = 20;
+                break;
+            case(HYBRID_ADDRESS_TEST):
                 fExpectTestNet = true;
                 nExpectedSize = 20;
                 break;
@@ -336,6 +349,10 @@ public:
         SetString(pszAddress);
     }
 
+    CHybridPubKey GetHybridKey() const {
+        return CHybridPubKey::Deserialize(vchData);
+    }
+
     CTxDestination Get() const {
         if(!IsValid()) return(CNoDestination());
         switch(nVersion) {
@@ -351,6 +368,11 @@ public:
                 memcpy(&id, &vchData[0], 20);
                 return(CScriptID(id));
             }
+            case(HYBRID_ADDRESS):
+            case(HYBRID_ADDRESS_TEST):
+                uint160 id;
+                memcpy(&id, &vchData[0], 20);
+                return CHybridKeyID(id);
         }
         return(CNoDestination());
     }
@@ -367,6 +389,23 @@ public:
             }
             default:
                 return(false);
+        }
+    }
+
+    bool GetHybridKeyID(CHybridKeyID &hybridID) const {
+        if (!IsValid()) return false;
+
+        switch (nVersion) {
+            case HYBRID_ADDRESS:
+            case HYBRID_ADDRESS_TEST: {
+                uint160 id;
+                memcpy(&id, &vchData[0], 20);
+                hybridID = CHybridKeyID(id);
+                return true;
+            }
+
+            default:
+                return false;
         }
     }
 
@@ -390,6 +429,10 @@ bool inline CCoinAddressVisitor::operator()(const CScriptID &id) const {
 }
 bool inline CCoinAddressVisitor::operator()(const CNoDestination &id) const {
     return(false);
+}
+
+bool inline CCoinAddressVisitor::operator()(const CHybridKeyID &id) const {
+    return addr->Set(id);
 }
 
 /** A base58-encoded secret key */

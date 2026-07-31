@@ -267,7 +267,7 @@ void GUI::createActions() {
     overviewAction = new QAction(QIcon(":/icons/overview"), tr("&Overview"), this);
     overviewAction->setToolTip(tr("Show general overview of wallet"));
     overviewAction->setCheckable(true);
-    overviewAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_1));
+    overviewAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_1));
     tabGroup->addAction(overviewAction);
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(overviewAction, SIGNAL(triggered()), this, SLOT(gotoOverviewPage()));
@@ -275,7 +275,7 @@ void GUI::createActions() {
     sendCoinsAction = new QAction(QIcon(":/icons/send"), tr("&Send"), this);
     sendCoinsAction->setToolTip(tr("Send coins to a Phoenixcoin address"));
     sendCoinsAction->setCheckable(true);
-    sendCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_2));
+    sendCoinsAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_2));
     tabGroup->addAction(sendCoinsAction);
     connect(sendCoinsAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(sendCoinsAction, SIGNAL(triggered()), this, SLOT(gotoSendCoinsPage()));
@@ -283,7 +283,7 @@ void GUI::createActions() {
     receiveCoinsAction = new QAction(QIcon(":/icons/receiving_addresses"), tr("&Receive"), this);
     receiveCoinsAction->setToolTip(tr("Show the list of addresses for receiving payments"));
     receiveCoinsAction->setCheckable(true);
-    receiveCoinsAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_3));
+    receiveCoinsAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_3));
     tabGroup->addAction(receiveCoinsAction);
     connect(receiveCoinsAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(receiveCoinsAction, SIGNAL(triggered()), this, SLOT(gotoReceiveCoinsPage()));
@@ -291,7 +291,7 @@ void GUI::createActions() {
     historyAction = new QAction(QIcon(":/icons/history"), tr("&Payments"), this);
     historyAction->setToolTip(tr("Browse payment history"));
     historyAction->setCheckable(true);
-    historyAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_4));
+    historyAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_4));
     tabGroup->addAction(historyAction);
     connect(historyAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(historyAction, SIGNAL(triggered()), this, SLOT(gotoHistoryPage()));
@@ -299,7 +299,7 @@ void GUI::createActions() {
     addressBookAction = new QAction(QIcon(":/icons/address-book"), tr("&Addresses"), this);
     addressBookAction->setToolTip(tr("Edit the list of stored addresses and labels"));
     addressBookAction->setCheckable(true);
-    addressBookAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_5));
+    addressBookAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_5));
     tabGroup->addAction(addressBookAction);
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(showNormalIfMinimized()));
     connect(addressBookAction, SIGNAL(triggered()), this, SLOT(gotoAddressBookPage()));
@@ -307,13 +307,13 @@ void GUI::createActions() {
     consoleAction = new QAction(QIcon(":/icons/console"), tr("&Console"), this);
     consoleAction->setToolTip(tr("Open the RPC console"));
     consoleAction->setCheckable(false);
-    consoleAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_6));
+    consoleAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_6));
     tabGroup->addAction(consoleAction);
     /* RPC console action connected already */
 
     explorerAction = new QAction(QIcon(":/icons/explorer"), tr("&Explorer"), this);
     explorerAction->setToolTip(tr("Open the block explorer"));
-    explorerAction->setShortcut(QKeySequence(Qt::ALT + Qt::Key_7));
+    explorerAction->setShortcut(QKeySequence(Qt::ALT, Qt::Key_7));
     explorerAction->setCheckable(false);
     tabGroup->addAction(explorerAction);
     /* Block explorer action connected already */
@@ -349,7 +349,7 @@ void GUI::createActions() {
     connect(importWalletAction, SIGNAL(triggered()), this, SLOT(importWallet()));
 
     quitAction = new QAction(QIcon(":/icons/quit"), tr("E&xit"), this);
-    quitAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_Q));
+    quitAction->setShortcut(QKeySequence(Qt::CTRL, Qt::Key_Q));
     quitAction->setMenuRole(QAction::QuitRole);
     connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
 

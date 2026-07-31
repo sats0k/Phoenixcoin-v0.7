@@ -23,6 +23,7 @@
 #include "ui_interface.h"
 #include "walletdb.h"
 #include "main.h"
+#include "hs/wallethybrid.h"
 
 class CAccountingEntry;
 class CWalletTx;
@@ -88,6 +89,23 @@ private:
 public:
     mutable CCriticalSection cs_wallet;
 
+    bool EnsureHybridKey(const CKeyID& keyID);
+    bool EnsureHybridKeyPool(unsigned int nTarget = 20);
+    bool RebuildUnusedHybridKeySet();
+    bool GetUnusedHybridKey(CHybridKeyID& hybridID);
+    bool fFillingKeyPool;
+    void LoadHybridKeys();
+
+    std::map<CHybridKeyID, CHybridKey> mapHybridKeys;
+    std::map<CHybridKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
+    std::set<CHybridKeyID> setUnusedHybridKeys;
+
+    // ===== Hybrid key access methods (override from CKeyStore) =====
+    bool HaveHybridKey(const CHybridKeyID &address) const override;
+    bool HaveHybridKeyByHash(const uint160 &keyHash) const override;
+    bool GetHybridKey(const CHybridKeyID &address, CHybridKey &keyOut) const override;
+    bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const override;
+
     bool fFileBacked;
     std::string strWalletFile;
 
@@ -123,6 +141,16 @@ public:
     std::map<uint256, int> mapRequestCount;
 
     std::map<CTxDestination, std::string> mapAddressBook;
+
+    // Hybrid address book (stores names/labels for hybrid keys)
+    std::map<CHybridKeyID, CHybridAddressEntry> mapHybridAddressBook;
+
+    // ---- Hybrid Address Book Functions ----
+    bool SetHybridAddressBookName(const CHybridKeyID& hybridID, const std::string& strName, const std::string& strPurpose = "receive");
+    bool GetHybridAddressBookName(const CHybridKeyID& hybridID, std::string& strNameOut) const;
+    bool DelHybridAddressBookName(const CHybridKeyID& hybridID);
+    std::vector<std::pair<CKeyID, std::string>> ListHybridAddresses() const;
+    void LoadHybridAddressBook();
 
     CPubKey vchDefaultKey;
     int64 nTimeFirstKey;

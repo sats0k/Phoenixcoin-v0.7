@@ -9,8 +9,10 @@
 
 #include "base58.h"
 #include "crypter.h"
+#include "main.h"
 #include "walletdb.h"
 #include "wallet.h"
+#include "hs/wallethybrid.h"
 
 using namespace std;
 
@@ -53,21 +55,25 @@ CPubKey CWallet::GenerateNewKey()
     return(pubkey);
 }
 
-bool CWallet::AddKey(const CKey &key) {
+bool CWallet::AddKey(const CKey& key)
+{
     CPubKey pubkey = key.GetPubKey();
+    CKeyID keyID = pubkey.GetID();
 
-    if(!CCryptoKeyStore::AddKey(key))
-      return(false);
+    if (!CCryptoKeyStore::AddKey(key))
+        return false;
 
-    if(!fFileBacked)
-      return(true);
+    if (!fFileBacked)
+        return true;
 
-    if(!IsCrypted()) {
-       return(CWalletDB(strWalletFile).WriteKey(pubkey, key.GetPrivKey(),
-         mapKeyMetadata[pubkey.GetID()]));
+    if (!IsCrypted()) {
+        return CWalletDB(strWalletFile).WriteKey(
+            pubkey,
+            key.GetPrivKey(),
+            mapKeyMetadata[keyID]);
     }
 
-    return(true);
+    return true;
 }
 
 bool CWallet::AddCryptedKey(const CPubKey &vchPubKey, const vector<uchar> &vchCryptedSecret) {
@@ -1222,6 +1228,7 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
 
 bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx *, uint> > &setCoinsRet,
   int64 &nValueRet, const CCoinControl *coinControl) const {
+
     vector<COutput> vCoins;
     AvailableCoins(vCoins, true, coinControl);
 
@@ -1279,6 +1286,27 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> > &vecSend, CW
                 if(!SelectCoins(nTotalValue, setCoins, nValueIn, coinControl))
                   return(false);
 
+                bool fHybridChange = false;
+
+                BOOST_FOREACH(const PAIRTYPE(const CWalletTx*, uint)& coin, setCoins)
+                {
+                   const CTxOut& prevout = coin.first->vout[coin.second];
+
+                    txnouttype whichType;
+                    vector<vector<unsigned char> > vSolutions;
+
+                    if (Solver(prevout.scriptPubKey, whichType, vSolutions))
+                    {
+                        if (whichType == TX_HYBRID_PUBKEY ||
+                            whichType == TX_HYBRID_PUBKEYHASH ||
+                            whichType == TX_HYBRID_MULTISIG)
+                        {
+                            fHybridChange = true;
+                            break;
+                        }
+                    }
+                }
+
                 BOOST_FOREACH(PAIRTYPE(const CWalletTx *, uint) pcoin, setCoins) {
                     int64 nCredit = pcoin.first->vout[pcoin.second].nValue;
                     dPriority += (double)nCredit * pcoin.first->GetDepthInMainChain();
@@ -1314,10 +1342,20 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> > &vecSend, CW
  * post-backup change. */
 
                         /* Reserve a new key pair from the key pool */
-                        CPubKey vchPubKey = reservekey.GetReservedKey();
+                        if (fHybridChange)
+                        {
+                            CHybridKeyID hybridID;
 
-                        scriptChange.SetDestination(vchPubKey.GetID());
+                            if (!GetUnusedHybridKey(hybridID))
+                                return false;
 
+                            scriptChange.SetDestination(hybridID);
+                        }
+                        else
+                        {
+                            CPubKey vchPubKey = reservekey.GetReservedKey();
+                            scriptChange.SetDestination(vchPubKey.GetID());
+                        }
                     }
 
                     // Insert change txn at random position:
@@ -1471,13 +1509,55 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nVal
 
     /* Parse Phoenixcoin address */
     CScript scriptPubKey;
-    scriptPubKey.SetDestination(address);
+
+    // -----------------------------------------------------------------
+    // Hybrid outputs (after consensus activation)
+    // -----------------------------------------------------------------
+    if (IsHybridConsensusActive())
+    {
+        const CKeyID* pKeyID = boost::get<CKeyID>(&address);
+
+        if (pKeyID)
+        {
+            LOCK(cs_wallet);
+
+            std::map<CHybridKeyID, CHybridKey>::const_iterator it =
+                mapHybridKeys.find(CHybridKeyID(*pKeyID));
+
+            if (it != mapHybridKeys.end())
+            {
+                std::unique_ptr<MLDSASigner> signer =
+                    GetSignerFromKey(it->second);
+
+                if (!signer)
+                    return "Hybrid signer missing.";
+
+                CHybridPubKey hybridPub(
+                    it->second.secpPub.Raw(),
+                    signer->GetPublicKey());
+
+                scriptPubKey = GetScriptForHybridPubKey(hybridPub);
+            }
+            else
+            {
+                // Legacy address
+                scriptPubKey.SetDestination(address);
+            }
+        }
+        else
+        {
+            // Script, multisig, etc.
+            scriptPubKey.SetDestination(address);
+        }
+    }
+    else
+    {
+        // Before hybrid activation
+        scriptPubKey.SetDestination(address);
+    }
 
     return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee);
 }
-
-
-
 
 DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
 {
@@ -1498,12 +1578,16 @@ DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
 
     if (nLoadWalletRet != DB_LOAD_OK)
         return nLoadWalletRet;
+
+    LoadHybridKeys();
+    EnsureHybridKeyPool();
+    RebuildUnusedHybridKeySet();
+
     fFirstRunRet = !vchDefaultKey.IsValid();
 
     NewThread(ThreadFlushWalletDB, &strWalletFile);
     return DB_LOAD_OK;
 }
-
 
 bool CWallet::SetAddressBookName(const CTxDestination& address, const string& strName)
 {
@@ -1607,6 +1691,7 @@ bool CWallet::TopUpKeyPool()
             return false;
 
         CWalletDB walletdb(strWalletFile);
+        fFillingKeyPool = true;
 
         // Top up key pool
         unsigned int nTargetSize = max(GetArg("-keypool", 100), 0LL);
@@ -1621,6 +1706,7 @@ bool CWallet::TopUpKeyPool()
             printf("keypool added key %" PRI64d ", size=%" PRIszu "\n",
               nEnd, setKeyPool.size());
         }
+        fFillingKeyPool = false;
     }
     return true;
 }

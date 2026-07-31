@@ -913,9 +913,9 @@ std::vector<unsigned char> CNetAddr::GetGroup() const
     }
     if (nBits > 0)
     {
-    uint8_t byte = GetByte(15 - nStartByte);
-    byte &= static_cast<uint8_t>(0xFF << (8 - nBits));
-    vchRet.push_back(byte);
+        uint8_t byte = GetByte(15 - nStartByte);
+        byte &= static_cast<uint8_t>(0xFF << (8 - nBits));
+        vchRet.push_back(byte);
     }
 
     return vchRet;

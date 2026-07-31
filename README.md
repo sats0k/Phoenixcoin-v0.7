@@ -8,6 +8,7 @@ Users looking for the production release branch, see [stable](https://github.com
 Minimum requirements:
  - OpenSSL v3.5
  - Boost v1.89
+ - OQS v0.12.0-dev
 
 Phoenixcoin
 ===========

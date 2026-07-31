@@ -15,10 +15,13 @@ OPT = -pipe -O2 -fomit-frame-pointer -fno-stack-protector -pthread
 
 # Warnings
 WARN = -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter \
--Wno-ignored-qualifiers
+-Wno-ignored-qualifiers -Wno-stringop-overread
+
+# Warnings C
+CWARN = -Wpedantic -Wmissing-prototypes
 
 # Additionals and overrides
-override CFLAGS := $(OPT) $(WARN) $(CFLAGS)
+override CFLAGS := $(OPT) $(WARN) $(CWARN) $(CFLAGS)
 override CXXFLAGS := $(OPT) $(WARN) $(CXXFLAGS)
 
 LDFLAGS = -Wl,-O2 -Wl,-s
@@ -114,7 +117,6 @@ OBJS = \
     obj/ntp.o \
     obj/protocol.o \
     obj/rpcblockchain.o \
-    obj/rpccrypto.o \
     obj/rpcdump.o \
     obj/rpccrypto.o \
     obj/rpcmain.o \
@@ -128,6 +130,10 @@ OBJS = \
     obj/version.o \
     obj/wallet.o \
     obj/walletdb.o \
+    obj/hybrid_signer.o \
+    obj/hybrid_verify.o \
+    obj/wallethybrid.o \
+    obj/wallet_hybrid_address.o \
     obj/neoscrypt.o \
     obj/neoscrypt_asm.o \
     obj/ecies.o \
@@ -162,6 +168,18 @@ obj/ecies.o: ecies/ecies.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 obj/secure.o: ecies/secure.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/hybrid_signer.o: hs/hybrid_signer.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/hybrid_verify.o: hs/hybrid_verify.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/wallethybrid.o: hs/wallethybrid.cpp
+	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
+
+obj/wallet_hybrid_address.o: hs/wallet_hybrid_address.cpp
 	$(CXX) $(CXXFLAGS) $(DEFS) $(INCS) -c $< -o $@
 
 phoenixcoind: $(OBJS:obj/%=obj/%)

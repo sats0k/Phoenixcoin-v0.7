@@ -230,6 +230,10 @@ HEADERS += src/qt/gui.h \
     src/neoscrypt.h \
     src/ecies/ecies.h \
     src/ntp.h \
+    src/hs/hybrid_signer.h \
+    src/hs/wallethybrid.h \
+    src/hs/hybrid_script.h \
+    src/hs/hybrid_verify.h \
     src/qt/walletmodeltransaction.h \
     src/qt/coincontrol.h
 
@@ -302,6 +306,10 @@ SOURCES += src/qt/phoenixcoin.cpp \
     src/ecies/secure.cpp \
     src/ecies/ecies.cpp \
     src/ntp.cpp \
+    src/hs/hybrid_signer.cpp \
+    src/hs/wallethybrid.cpp \
+    src/hs/hybrid_verify.cpp \
+    src/hs/wallet_hybrid_address.cpp \
     src/qt/walletmodeltransaction.cpp \
     src/qt/coincontrol.cpp
 
@@ -386,7 +394,6 @@ LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB
 LIBS += -lssl -lcrypto -ldb_cxx$$BDB_LIB_SUFFIX -lsecp256k1
 # -lgdi32 has to happen after -lcrypto (see  #681)
 win32:LIBS += -lws2_32 -lmswsock -lshlwapi -lole32 -loleaut32 -luuid -lgdi32
-
 LIBS += -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_LIB_SUFFIX
 
 system($$QMAKE_LRELEASE -silent $$_PRO_FILE_)

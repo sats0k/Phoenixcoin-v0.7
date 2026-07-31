@@ -6,17 +6,66 @@
 #ifndef WALLETDB_H
 #define WALLETDB_H
 
+#pragma once
+
 #include <utility>
 #include <string>
 #include <list>
 #include <vector>
 
 #include "db.h"
+#include "key.h"
+#include "script.h"
+#include "serialize.h"
+#include "hs/wallethybrid.h"
 
 class CAccount;
 class CAccountingEntry;
 class CKeyPool;
 class CWalletTx;
+class CHybridKeyDisk;
+class CHybridKeyMetadata;
+
+struct CHybridKeyMetadata
+{
+    int32_t nCreateTime;
+    int nVersion;
+
+    CHybridKeyMetadata() : nCreateTime(0), nVersion(1) {}
+
+    IMPLEMENT_SERIALIZE(
+        READWRITE(nVersion);
+        READWRITE(nCreateTime);
+    )
+};
+
+// ============================================================================
+// HYBRID ADDRESS BOOK METADATA
+// ============================================================================
+
+/**
+ * Hybrid Address Entry
+ * Stores metadata about hybrid keys in address book
+ */
+struct CHybridAddressEntry
+{
+    int nVersion;                           // Entry version
+    int64 nCreateTime;                      // When address was created
+    std::string strLabel;                   // User label/name
+    std::string strPurpose;                 // "send", "receive", "change"
+
+    CHybridAddressEntry() : nVersion(1), nCreateTime(0) {}
+
+    CHybridAddressEntry(const std::string& label, const std::string& purpose = "receive")
+        : nVersion(1), nCreateTime(GetTime()), strLabel(label), strPurpose(purpose) {}
+
+    IMPLEMENT_SERIALIZE(
+        READWRITE(nVersion);
+        READWRITE(nCreateTime);
+        READWRITE(strLabel);
+        READWRITE(strPurpose);
+    )
+};
 
 /** Error statuses for the wallet database */
 enum DBErrors
@@ -68,6 +117,63 @@ private:
     CWalletDB(const CWalletDB&);
     void operator=(const CWalletDB&);
 public:
+    bool LoadAllHybridKeys(std::vector<CHybridKeyDisk> &vKeys);
+
+    bool WriteHybridKey(const CHybridKeyID &keyID, const CHybridKeyDisk &disk);
+
+    bool WriteHybridKeyMetadata(const CHybridKeyID& keyid, const CHybridKeyMetadata& meta);
+
+    // ---- Hybrid Address Book Functions ----
+
+    bool WriteHybridAddressEntry(const CHybridKeyID& keyID, const CHybridAddressEntry& entry)
+    {
+        nWalletDBUpdated++;
+        return Write(std::make_pair(std::string("hybaddr"), keyID), entry);
+    }
+
+    bool EraseHybridAddressEntry(const CHybridKeyID& keyID)
+    {
+        nWalletDBUpdated++;
+        return Erase(std::make_pair(std::string("hybaddr"), keyID));
+    }
+
+    bool ReadHybridAddressEntry(const CHybridKeyID& keyID, CHybridAddressEntry& entry)
+    {
+        return Read(std::make_pair(std::string("hybaddr"), keyID), entry);
+    }
+
+    bool LoadAllHybridAddresses(std::map<CHybridKeyID, CHybridAddressEntry>& mapAddresses)
+    {
+        mapAddresses.clear();
+        Dbc* pcursor = GetCursor();
+        if (!pcursor) return false;
+
+        while (true) {
+            CDataStream ssKey(SER_DISK, CLIENT_VERSION), ssValue(SER_DISK, CLIENT_VERSION);
+            int ret = ReadAtCursor(pcursor, ssKey, ssValue);
+            if (ret == DB_NOTFOUND) break;
+            if (ret != 0) {
+                pcursor->close();
+                return false;
+            }
+
+            std::string strType;
+            ssKey >> strType;
+            if (strType != "hybaddr") continue;
+
+            CHybridKeyID keyID;
+            ssKey >> keyID;
+
+            CHybridAddressEntry entry;
+            ssValue >> entry;
+
+            mapAddresses[keyID] = entry;
+        }
+
+        pcursor->close();
+        return true;
+    }
+
     bool WriteName(const std::string& strAddress, const std::string& strName);
 
     bool EraseName(const std::string& strAddress);
