@@ -1559,6 +1559,114 @@ string CWallet::SendMoneyToDestination(const CTxDestination& address, int64 nVal
     return SendMoney(scriptPubKey, nValue, wtxNew, fAskFee);
 }
 
+bool CWallet::ZapWalletTransactions()
+{
+    LOCK(cs_wallet);
+
+    std::set<uint256> setZap;
+
+    // First collect all unconfirmed wallet transactions.
+    BOOST_FOREACH(const PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
+    {
+        const CWalletTx& wtx = item.second;
+
+        if (wtx.GetDepthInMainChain() == 0)
+            setZap.insert(item.first);
+    }
+
+    if (setZap.empty())
+        return true;
+
+    // Restore inputs spent by the transactions being removed.
+    BOOST_FOREACH(const uint256& hash, setZap)
+    {
+        map<uint256, CWalletTx>::iterator mi = mapWallet.find(hash);
+        if (mi == mapWallet.end())
+            continue;
+
+        CWalletTx& wtx = mi->second;
+
+        BOOST_FOREACH(const CTxIn& txin, wtx.vin)
+        {
+            map<uint256, CWalletTx>::iterator prev =
+                mapWallet.find(txin.prevout.hash);
+
+            if (prev == mapWallet.end())
+                continue;
+
+            CWalletTx& prevWtx = prev->second;
+
+            if (txin.prevout.n >= prevWtx.vout.size())
+                continue;
+
+            if (!IsMine(prevWtx.vout[txin.prevout.n]))
+                continue;
+
+            // Don't restore the output if another wallet transaction
+            // that is NOT being zapped still spends it.
+            bool fStillSpent = false;
+
+            BOOST_FOREACH(const PAIRTYPE(const uint256, CWalletTx)& other,
+                          mapWallet)
+            {
+                if (setZap.count(other.first))
+                    continue;
+
+                BOOST_FOREACH(const CTxIn& otherIn, other.second.vin)
+                {
+                    if (otherIn.prevout.hash == txin.prevout.hash &&
+                        otherIn.prevout.n == txin.prevout.n)
+                    {
+                        fStillSpent = true;
+                        break;
+                    }
+                }
+
+                if (fStillSpent)
+                    break;
+            }
+
+            if (!fStillSpent)
+            {
+                prevWtx.MarkUnspent(txin.prevout.n);
+                prevWtx.WriteToDisk();
+
+                NotifyTransactionChanged(
+                    this,
+                    prevWtx.GetHash(),
+                    CT_UPDATED);
+            }
+        }
+    }
+
+    // Now remove the unconfirmed transactions.
+    BOOST_FOREACH(const uint256& hash, setZap)
+    {
+        map<uint256, CWalletTx>::iterator mi = mapWallet.find(hash);
+        if (mi == mapWallet.end())
+            continue;
+
+        CWalletTx& wtx = mi->second;
+
+        printf("ZapWalletTransactions(): removing %s\n",
+               hash.ToString().c_str());
+
+        // Remove the transaction from the mempool if present.
+        mempool.remove(wtx);
+
+        // Remove the transaction from wallet.dat.
+        CWalletDB walletdb(strWalletFile);
+        walletdb.EraseTx(hash);
+
+        // Remove the transaction from the wallet map.
+        mapWallet.erase(mi);
+
+        NotifyTransactionChanged(this, hash, CT_DELETED);
+    }
+
+    return true;
+}
+
 DBErrors CWallet::LoadWallet(bool& fFirstRunRet)
 {
     if (!fFileBacked)

@@ -1710,3 +1710,27 @@ Value makekeypair(const Array &params, bool fHelp) {
 
     return(result);
 }
+
+Value zapwallettxes(const Array& params, bool fHelp)
+{
+    printf("ZAP RPC: fHelp=%d params=%u\n",
+           fHelp ? 1 : 0,
+           (unsigned int)params.size());
+
+    if (fHelp)
+    {
+        throw std::runtime_error(
+            "zapwallettxes\n"
+            "Removes all unconfirmed wallet transactions.");
+    }
+
+    if (params.size() != 0)
+        throw std::runtime_error("zapwallettxes takes no parameters");
+
+    if (!pwalletMain->ZapWalletTransactions())
+        throw JSONRPCError(
+            RPC_WALLET_ERROR,
+            "Failed to zap wallet transactions");
+
+    return Value::null;
+}

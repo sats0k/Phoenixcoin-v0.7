@@ -325,6 +325,7 @@ static const CRPCCommand vRPCCommands[] =
     { "gethybridaddress",       &gethybridaddress,       false,  false },
     { "listhybridaddresses",    &listhybridaddresses,    false,  false },
     { "gethybridkey",           &gethybridkey,           false,  false },
+    { "zapwallettxes",          &zapwallettxes,          false,  false },
 };
 
 CRPCTable::CRPCTable()
