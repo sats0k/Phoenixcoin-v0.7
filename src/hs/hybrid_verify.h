@@ -135,7 +135,8 @@ extern bool CheckSig(
     const CScript& scriptCode,
     const CTransaction& txTo,
     unsigned int nIn,
-    int nHashType
+    int nHashType,
+    const uint256* precomputedSighash = NULL
 );
 
 /**
@@ -172,9 +173,9 @@ extern uint256 SignatureHash(
  *     sigECDSA  sigMLDSA  pubkeyECDSA  pubkeyMLDSA  -- bool
  *
  * Verification sequence:
- *   1. Verify the ECDSA signature.
- *   2. Compute the transaction signature hash.
- *   3. Build the domain-separated hybrid message.
+ *   1. Compute the transaction signature hash once.
+ *   2. Verify the ECDSA signature using that hash.
+ *   3. Build the domain-separated hybrid message from that hash.
  *   4. Verify the ML-DSA-65 signature.
  *   5. Return true only if both verifications succeed.
  *
@@ -252,6 +253,13 @@ inline bool VerifyHybridSignature(
         return false;
 
     // ------------------------------------------------------------
+    // Compute transaction sighash ONCE.
+    // Both ECDSA and ML-DSA use this same transaction digest.
+    // ------------------------------------------------------------
+    uint256 sighash =
+        SignatureHash(scriptCode, txTo, nIn, hashTypeEC);
+
+    // ------------------------------------------------------------
     // Verify ECDSA signature
     // ------------------------------------------------------------
     if (!CheckSig(
@@ -260,7 +268,8 @@ inline bool VerifyHybridSignature(
             scriptCode,
             txTo,
             nIn,
-            hashTypeEC))
+            hashTypeEC,
+            &sighash))
     {
         return false;
     }
@@ -271,12 +280,6 @@ inline bool VerifyHybridSignature(
     std::vector<unsigned char> mldsaSig(
         vchSigML.begin(),
         vchSigML.end() - 1);
-
-    // ------------------------------------------------------------
-    // Build the exact message signed by ML-DSA
-    // ------------------------------------------------------------
-    uint256 sighash =
-        SignatureHash(scriptCode, txTo, nIn, hashTypeEC);
 
     std::vector<unsigned char> hybridMsg;
     BuildHybridMessage(sighash, hybridMsg);

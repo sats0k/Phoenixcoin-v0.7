@@ -42,7 +42,8 @@ bool CheckSig(const std::vector<unsigned char>& vchSig,
               const CScript& scriptCode,
               const CTransaction& txTo,
               unsigned int nIn,
-              int nHashType);
+              int nHashType,
+              const uint256* precomputedSighash);
 
 typedef vector<uchar> valtype;
 static const valtype vchFalse(0);
@@ -1285,7 +1286,8 @@ bool CheckSig(const std::vector<unsigned char>& vchSig,
               const CScript& scriptCode,
               const CTransaction& txTo,
               unsigned int nIn,
-              int nHashType)
+              int nHashType,
+              const uint256* precomputedSighash)
 {
     static CSignatureCache signatureCache;
 
@@ -1300,8 +1302,12 @@ bool CheckSig(const std::vector<unsigned char>& vchSig,
     // Remove sighash byte.
     std::vector<unsigned char> sig(vchSig.begin(), vchSig.end() - 1);
 
-    // Compute transaction sighash.
-    uint256 sighash = SignatureHash(scriptCode, txTo, nIn, sigHashType);
+    // Compute transaction sighash unless the caller already has it.
+    uint256 sighash;
+    if (precomputedSighash)
+        sighash = *precomputedSighash;
+    else
+        sighash = SignatureHash(scriptCode, txTo, nIn, sigHashType);
 
     // Signature cache.
     if (signatureCache.Get(sighash, sig, vchPubKey))
