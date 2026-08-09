@@ -944,6 +944,27 @@ public:
 
     void UpdateTime(const CBlockIndex* pindexPrev);
 
+    uint256 BuildMerkleTree(const std::vector<uint256>& vTxHashes) const
+    {
+        vMerkleTree.clear();
+
+        BOOST_FOREACH(const uint256& hash, vTxHashes)
+            vMerkleTree.push_back(hash);
+
+        int j = 0;
+        for (int nSize = vTxHashes.size(); nSize > 1; nSize = (nSize + 1) / 2)
+        {
+            for (int i = 0; i < nSize; i += 2)
+            {
+                int i2 = std::min(i+1, nSize-1);
+                vMerkleTree.push_back(Hash(BEGIN(vMerkleTree[j+i]),  END(vMerkleTree[j+i]),
+                                           BEGIN(vMerkleTree[j+i2]), END(vMerkleTree[j+i2])));
+            }
+            j += nSize;
+        }
+        return (vMerkleTree.empty() ? 0 : vMerkleTree.back());
+    }
+
 
     uint256 BuildMerkleTree() const
     {
