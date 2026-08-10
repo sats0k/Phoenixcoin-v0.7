@@ -201,7 +201,7 @@ void ThreadIRCSeed(void* parg)
     printf("ThreadIRCSeed exited\n");
 }
 
-void ThreadIRCSeed2(void* parg)
+void ThreadIRCSeed2(void* /*parg*/)
 {
     // Don't connect to IRC if we won't use IPv4 connections.
     if (IsLimited(NET_IPV4))

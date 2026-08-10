@@ -800,7 +800,7 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol> 
     vnThreadsRunning[THREAD_RPCLISTENER]--;
 }
 
-void ThreadRPCServer2(void* parg)
+void ThreadRPCServer2(void* /*parg*/)
 {
     printf("ThreadRPCServer started\n");
 

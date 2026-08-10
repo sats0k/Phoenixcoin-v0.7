@@ -350,7 +350,7 @@ namespace json_spirit
     }
 
     template< typename Iter_type >
-    void throw_error( Iter_type i, const std::string& reason )
+    void throw_error( Iter_type /*i*/, const std::string& reason )
     {
        throw reason;
     }
@@ -369,32 +369,32 @@ namespace json_spirit
         {
         }
 
-        static void throw_not_value( Iter_type begin, Iter_type end )
+        static void throw_not_value( Iter_type begin, Iter_type /*end*/ )
         {
             throw_error( begin, "not a value" );
         }
 
-        static void throw_not_array( Iter_type begin, Iter_type end )
+        static void throw_not_array( Iter_type begin, Iter_type /*end*/ )
         {
             throw_error( begin, "not an array" );
         }
 
-        static void throw_not_object( Iter_type begin, Iter_type end )
+        static void throw_not_object( Iter_type begin, Iter_type /*end*/ )
         {
             throw_error( begin, "not an object" );
         }
 
-        static void throw_not_pair( Iter_type begin, Iter_type end )
+        static void throw_not_pair( Iter_type begin, Iter_type /*end*/ )
         {
             throw_error( begin, "not a pair" );
         }
 
-        static void throw_not_colon( Iter_type begin, Iter_type end )
+        static void throw_not_colon( Iter_type begin, Iter_type /*end*/ )
         {
             throw_error( begin, "no colon in pair" );
         }
 
-        static void throw_not_string( Iter_type begin, Iter_type end )
+        static void throw_not_string( Iter_type begin, Iter_type /*end*/ )
         {
             throw_error( begin, "not a string" );
         }

@@ -14,7 +14,7 @@ LD := $(CXX)
 OPT = -pipe -O2 -fomit-frame-pointer -fno-stack-protector -pthread
 
 # Warnings
-WARN = -Wall -Wextra -Wformat -Wformat-security -Wno-unused-parameter \
+WARN = -Wall -Wextra -Wformat -Wformat-security \
 -Wno-ignored-qualifiers -Wno-stringop-overread
 
 # Warnings C

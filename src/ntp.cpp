@@ -425,7 +425,7 @@ int64 nNtpOffset = INT64_MAX;
 /* Critical NTP to system time mismatch */
 bool fNtpWarning = false;
 
-void ThreadNtpPoller(void *parg) {
+void ThreadNtpPoller(void */*parg*/) {
     int i;
     int64 nTime, nSystemTime;
 

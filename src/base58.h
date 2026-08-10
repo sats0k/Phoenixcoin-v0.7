@@ -427,7 +427,7 @@ bool inline CCoinAddressVisitor::operator()(const CKeyID &id) const {
 bool inline CCoinAddressVisitor::operator()(const CScriptID &id) const {
     return(addr->Set(id));
 }
-bool inline CCoinAddressVisitor::operator()(const CNoDestination &id) const {
+bool inline CCoinAddressVisitor::operator()(const CNoDestination &/*id*/) const {
     return(false);
 }
 

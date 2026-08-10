@@ -195,7 +195,7 @@ struct secure_allocator : public std::allocator<T>
     template<typename _Other> struct rebind
     { typedef secure_allocator<_Other> other; };
 
-    T* allocate(std::size_t n, const void *hint = 0) {
+    T* allocate(std::size_t n, const void */*hint*/ = 0) {
         T *p;
         p = std::allocator<T>::allocate(n);
         if(p) LockedPageManager::instance.LockRange(p, sizeof(T) * n);

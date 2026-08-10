@@ -148,7 +148,7 @@ bool OptionsModel::Upgrade()
 }
 
 
-int OptionsModel::rowCount(const QModelIndex & parent) const
+int OptionsModel::rowCount(const QModelIndex & /*parent*/) const
 {
     return OptionIDRowCount;
 }

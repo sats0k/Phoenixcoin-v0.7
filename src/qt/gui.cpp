@@ -743,7 +743,7 @@ void GUI::askFee(qint64 nFeeRequired, bool *payFee) {
     *payFee = (retval == QMessageBox::Yes);
 }
 
-void GUI::incomingTransaction(const QModelIndex & parent, int start, int end) {
+void GUI::incomingTransaction(const QModelIndex & parent, int start, int /*end*/) {
 
     if(!walletModel || !clientModel)
         return;

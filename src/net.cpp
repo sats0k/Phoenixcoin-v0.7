@@ -458,7 +458,7 @@ bool GetMyExternalIP(CNetAddr &ipRet) {
     return(false);
 }
 
-void ThreadGetMyExternalIP(void *parg) {
+void ThreadGetMyExternalIP(void */*parg*/) {
 
     RenameThread("pxc-ext-ip");
 
@@ -707,7 +707,7 @@ void ThreadSocketHandler(void* parg)
     printf("ThreadSocketHandler exited\n");
 }
 
-void ThreadSocketHandler2(void* parg)
+void ThreadSocketHandler2(void* /*parg*/)
 {
     printf("ThreadSocketHandler started\n");
     list<CNode*> vNodesDisconnected;
@@ -1070,7 +1070,7 @@ void ThreadMapPort(void* parg)
     printf("ThreadMapPort exited\n");
 }
 
-void ThreadMapPort2(void* parg)
+void ThreadMapPort2(void* /*parg*/)
 {
     printf("ThreadMapPort started\n");
 
@@ -1243,7 +1243,7 @@ void ThreadDNSAddressSeed(void* parg)
     printf("ThreadDNSAddressSeed exited\n");
 }
 
-void ThreadDNSAddressSeed2(void* parg)
+void ThreadDNSAddressSeed2(void* /*parg*/)
 {
     printf("ThreadDNSAddressSeed started\n");
     int found = 0;
@@ -1289,7 +1289,7 @@ void DumpAddresses()
       addrman.size(), GetTimeMillis() - nStart);
 }
 
-void ThreadDumpAddress2(void* parg)
+void ThreadDumpAddress2(void* /*parg*/)
 {
     vnThreadsRunning[THREAD_DUMPADDRESS]++;
     while (!fShutdown)
@@ -1356,7 +1356,7 @@ static void ProcessOneShot()
     }
 }
 
-void ThreadOpenConnections2(void* parg)
+void ThreadOpenConnections2(void* /*parg*/)
 {
     printf("ThreadOpenConnections started\n");
 
@@ -1476,7 +1476,7 @@ void ThreadOpenAddedConnections(void* parg)
     printf("ThreadOpenAddedConnections exited\n");
 }
 
-void ThreadOpenAddedConnections2(void *parg) {
+void ThreadOpenAddedConnections2(void */*parg*/) {
     uint i;
 
     printf("ThreadOpenAddedConnections started\n");
@@ -1625,7 +1625,7 @@ void ThreadMessageHandler(void* parg)
     printf("ThreadMessageHandler exited\n");
 }
 
-void ThreadMessageHandler2(void* parg)
+void ThreadMessageHandler2(void* /*parg*/)
 {
     printf("ThreadMessageHandler started\n");
     SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL);
@@ -1851,7 +1851,7 @@ static void Discover()
       NewThread(ThreadGetMyExternalIP, NULL);
 }
 
-void StartNode(void* parg)
+void StartNode(void* /*parg*/)
 {
     // Make this thread recognisable as the startup thread
     RenameThread("pxc-start");

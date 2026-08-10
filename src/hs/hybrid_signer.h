@@ -87,7 +87,7 @@ public:
     /* Encrypted private-key serialization (recommended) */
     virtual std::vector<uint8_t>
     SerializePrivateKeyEncrypted(
-        const std::vector<uint8_t>& password) const {
+        const std::vector<uint8_t>& /*password*/) const {
         return {};
     }
 };

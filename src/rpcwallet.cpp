@@ -329,7 +329,7 @@ Value sendtoaddress(const Array &params, bool fHelp) {
 }
 
 
-Value listaddressgroupings(const Array &params, bool fHelp) {
+Value listaddressgroupings(const Array &/*params*/, bool fHelp) {
 
     if(fHelp) {
         string msg = "listaddressgroupings\n"
@@ -478,7 +478,7 @@ Value getreceivedbyaddress(const Array &params, bool fHelp) {
 }
 
 
-void GetAccountAddresses(string strAccount, set<CTxDestination>& setAddress)
+void GetAccountAddresses(string strAccount, set<CTxDestination>& /*setAddress*/)
 {
     BOOST_FOREACH(const PAIRTYPE(CTxDestination, string)& item, pwalletMain->mapAddressBook)
     {
@@ -1058,7 +1058,7 @@ void AcentryToJSON(const CAccountingEntry& acentry, const string& strAccount, Ar
 }
 
 // Hybrid-aware helper to add size and signature type
-static void WalletTxToJSONHybrid(const CWalletTx& wtx, const string& strAccount, Object& entry)
+static void WalletTxToJSONHybrid(const CWalletTx& wtx, const string& /*strAccount*/, Object& entry)
 {
     // Fill standard fields
     WalletTxToJSON(wtx, entry);
@@ -1365,7 +1365,7 @@ Value keypoolrefill(const Array &params, bool fHelp) {
 }
 
 
-void ThreadTopUpKeyPool(void* parg)
+void ThreadTopUpKeyPool(void* /*parg*/)
 {
     // Make this thread recognisable as the key-topping-up thread
     RenameThread("pxc-key-top");
@@ -1559,7 +1559,7 @@ private:
 public:
     DescribeAddressVisitor(isminetype mineIn) : mine(mineIn) {}
 
-    Object operator()(const CNoDestination &dest) const { return Object(); }
+    Object operator()(const CNoDestination &/*dest*/) const { return Object(); }
 
     Object operator()(const CKeyID &keyID) const {
         Object obj;

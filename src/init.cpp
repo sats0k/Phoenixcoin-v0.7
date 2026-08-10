@@ -49,7 +49,7 @@ uint opt_flags = 0;
 // Shutdown
 //
 
-void ExitTimeout(void *parg) {
+void ExitTimeout(void */*parg*/) {
 #ifdef WINDOWS
     Sleep(5000);
     ExitProcess(0);
@@ -67,7 +67,7 @@ void StartShutdown() {
 #endif
 }
 
-void Shutdown(void *parg) {
+void Shutdown(void */*parg*/) {
     static CCriticalSection cs_Shutdown;
     static bool fTaken;
 
