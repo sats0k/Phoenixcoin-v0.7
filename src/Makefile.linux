@@ -11,11 +11,11 @@ CXX = g++
 LD := $(CXX)
 
 # Optimisation flags
-OPT = -pipe -O2 -fomit-frame-pointer -fno-stack-protector -pthread
+OPT = -pipe -O3 -fomit-frame-pointer -fno-stack-protector -pthread
 
 # Warnings
 WARN = -Wall -Wextra -Wformat -Wformat-security \
--Wno-ignored-qualifiers -Wno-stringop-overread
+-Wno-stringop-overread
 
 # Warnings C
 CWARN = -Wpedantic -Wmissing-prototypes
