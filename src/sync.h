@@ -21,7 +21,11 @@ typedef boost::mutex CWaitableCriticalSection;
 void EnterCritical(const char* pszName, const char* pszFile, int nLine, void* cs, bool fTry = false);
 void LeaveCritical();
 #else
-static void inline EnterCritical(const char* pszName, const char* pszFile, int nLine, void* cs, bool fTry = false) {}
+static inline void EnterCritical(const char* /*pszName*/,
+                                 const char* /*pszFile*/,
+                                 int /*nLine*/,
+                                 void* /*cs*/,
+                                 bool /*fTry*/ = false) {}
 static void inline LeaveCritical() {}
 #endif
 

@@ -23,8 +23,8 @@ class CScript;
 
 class CNoDestination {
 public:
-    friend bool operator==(const CNoDestination &a, const CNoDestination &b) { return true; }
-    friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
+    friend bool operator==(const CNoDestination &/*a*/, const CNoDestination &/*b*/) { return true; }
+    friend bool operator<(const CNoDestination &/*a*/, const CNoDestination &/*b*/) { return true; }
 };
 
 class CHybridKeyID : public uint160
@@ -136,22 +136,22 @@ public:
     }
 
     // ===== Hybrid key support (forward declared in wallethybrid.h) =====
-    virtual bool HaveHybridKey(const CHybridKeyID &address) const
+    virtual bool HaveHybridKey(const CHybridKeyID &/*address*/) const
     {
         return false;
     }
 
-    virtual bool HaveHybridKeyByHash(const uint160 &keyHash) const
+    virtual bool HaveHybridKeyByHash(const uint160 &/*keyHash*/) const
     {
         return false;
     }
 
-    virtual bool GetHybridKey(const CHybridKeyID &address, CHybridKey &keyOut) const
+    virtual bool GetHybridKey(const CHybridKeyID &/*address*/, CHybridKey &/*keyOut*/) const
     {
         return false;
     }
 
-    virtual bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const
+    virtual bool GetHybridKeyByHash(const uint160 &/*keyHash*/, CHybridKey &/*keyOut*/) const
     {
         return false;
     }

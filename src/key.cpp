@@ -162,7 +162,7 @@ static EVP_PKEY* MakePKeyFromSecret(const unsigned char* secret,
 
 /* ----------  Recover pubkey from sig ---------- */
 CPubKey RecoverPubKey(const uint256& hash, const unsigned char sig64[64],
-                      int recid, bool compressed) {
+                      int recid, bool /*compressed*/) {
     secp256k1_ecdsa_recoverable_signature rsig;
     secp256k1_pubkey pub;
 

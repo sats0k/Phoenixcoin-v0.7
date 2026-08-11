@@ -2032,10 +2032,16 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot) const
     // Check for duplicate txids. This is caught by ConnectInputs(),
     // but catching it earlier avoids a potential DoS attack:
     set<uint256> uniqueTx;
+    std::vector<uint256> vTxHashes;
+    vTxHashes.reserve(vtx.size());
+
     BOOST_FOREACH(const CTransaction& tx, vtx)
     {
-        uniqueTx.insert(tx.GetHash());
+        uint256 hash = tx.GetHash();
+        uniqueTx.insert(hash);
+        vTxHashes.push_back(hash);
     }
+
     if (uniqueTx.size() != vtx.size())
         return DoS(100, error("CheckBlock() : duplicate transaction"));
 
@@ -2048,7 +2054,7 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot) const
         return DoS(100, error("CheckBlock() : out-of-bounds SigOpCount"));
 
     // Check merkle root
-    if (fCheckMerkleRoot && hashMerkleRoot != BuildMerkleTree())
+    if (fCheckMerkleRoot && hashMerkleRoot != BuildMerkleTree(vTxHashes))
         return DoS(100, error("CheckBlock() : hashMerkleRoot mismatch"));
 
     return true;

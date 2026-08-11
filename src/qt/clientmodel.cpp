@@ -169,7 +169,7 @@ QString ClientModel::clientName() const
 }
 
 // Handlers for core signals
-static void NotifyBlocksChanged(ClientModel *clientmodel)
+static void NotifyBlocksChanged(ClientModel */*clientmodel*/)
 {
     // This notification is too frequent. Don't trigger a signal.
     // Don't remove it, though, as it might be useful later.

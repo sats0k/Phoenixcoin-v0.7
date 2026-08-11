@@ -500,7 +500,7 @@ bool CTxDB::UpdateTxIndex(uint256 hash, const CTxIndex& txindex)
     return Write(make_pair(string("tx"), hash), txindex);
 }
 
-bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int nHeight)
+bool CTxDB::AddTxIndex(const CTransaction& tx, const CDiskTxPos& pos, int /*nHeight*/)
 {
     assert(!fClient);
 

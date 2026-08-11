@@ -325,6 +325,7 @@ static const CRPCCommand vRPCCommands[] =
     { "gethybridaddress",       &gethybridaddress,       false,  false },
     { "listhybridaddresses",    &listhybridaddresses,    false,  false },
     { "gethybridkey",           &gethybridkey,           false,  false },
+    { "zapwallettxes",          &zapwallettxes,          false,  false },
 };
 
 CRPCTable::CRPCTable()
@@ -799,7 +800,7 @@ static void RPCAcceptHandler(boost::shared_ptr< basic_socket_acceptor<Protocol> 
     vnThreadsRunning[THREAD_RPCLISTENER]--;
 }
 
-void ThreadRPCServer2(void* parg)
+void ThreadRPCServer2(void* /*parg*/)
 {
     printf("ThreadRPCServer started\n");
 

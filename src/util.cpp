@@ -70,17 +70,6 @@ bool fReopenDebugLog = false;
 bool fNeoScrypt = false;
 uint nNeoScryptOptions = 0;
 
-// Init OpenSSL library multithreading support
-static CCriticalSection** ppmutexOpenSSL;
-void locking_callback(int mode, int i, const char* file, int line)
-{
-    if (mode & CRYPTO_LOCK) {
-        ENTER_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
-    } else {
-        LEAVE_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
-    }
-}
-
 LockedPageManager LockedPageManager::instance;
 
 // Init
@@ -89,12 +78,6 @@ class CInit
 public:
     CInit()
     {
-        // Init OpenSSL library multithreading support
-        ppmutexOpenSSL = (CCriticalSection**)OPENSSL_malloc(CRYPTO_num_locks() * sizeof(CCriticalSection*));
-        for (int i = 0; i < CRYPTO_num_locks(); i++)
-            ppmutexOpenSSL[i] = new CCriticalSection();
-        CRYPTO_set_locking_callback(locking_callback);
-
 #ifdef WINDOWS
         // Seed random number generator with screen scrape and other hardware sources
         RAND_screen();
@@ -103,17 +86,9 @@ public:
         // Seed random number generator with performance counter
         RandAddSeed();
     }
-    ~CInit()
-    {
-        // Shutdown OpenSSL library multithreading support
-        CRYPTO_set_locking_callback(NULL);
-        for (int i = 0; i < CRYPTO_num_locks(); i++)
-            delete ppmutexOpenSSL[i];
-        OPENSSL_free(ppmutexOpenSSL);
-    }
-}
-instance_of_cinit;
+};
 
+CInit instance_of_cinit;
 
 void RandAddSeed() {
     int64 nCounter = GetTimeMicros();

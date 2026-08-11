@@ -95,6 +95,7 @@ public:
     bool GetUnusedHybridKey(CHybridKeyID& hybridID);
     bool fFillingKeyPool;
     void LoadHybridKeys();
+    bool ZapWalletTransactions();
 
     std::map<CHybridKeyID, CHybridKey> mapHybridKeys;
     std::map<CHybridKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
@@ -411,7 +412,6 @@ static void WriteOrderPos(const int64& nOrderPos, mapValue_t& mapValue)
     mapValue["n"] = i64tostr(nOrderPos);
 }
 
-
 /** A transaction with a bunch of additional info that only the owner cares about.
  * It includes any unrecorded transactions needed to link it back to the block chain.
  */
@@ -585,6 +585,20 @@ public:
         if (!vfSpent[nOut])
         {
             vfSpent[nOut] = true;
+            fAvailableCreditCached = false;
+        }
+    }
+
+    void MarkUnspent(unsigned int nOut)
+    {
+        if (nOut >= vout.size())
+            throw std::runtime_error("CWalletTx::MarkUnspent() : nOut out of range");
+
+        vfSpent.resize(vout.size());
+
+        if (vfSpent[nOut])
+        {
+            vfSpent[nOut] = false;
             fAvailableCreditCached = false;
         }
     }
