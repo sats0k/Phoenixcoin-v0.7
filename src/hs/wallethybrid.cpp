@@ -201,6 +201,10 @@ bool LoadHybridKey(CWallet* wallet, const CHybridKeyDisk& disk)
         mem.mldsaSigner = std::make_unique<MLDSASigner>(pkey);
         signer = std::make_unique<MLDSASigner>(pkey);
 
+        // Release the reference returned by d2i_AutoPrivateKey().
+        EVP_PKEY_free(pkey);
+        pkey = nullptr;
+
         if (!ValidateHybridKey(mem))
             throw std::runtime_error("Hybrid key validation failed");
 

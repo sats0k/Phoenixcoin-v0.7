@@ -53,7 +53,13 @@ std::unique_ptr<MLDSASigner> MLDSASigner::GenerateNew() {
     }
 
     EVP_PKEY_CTX_free(ctx);
-    return std::make_unique<MLDSASigner>(pkey);
+    std::unique_ptr<MLDSASigner> signer =
+    std::make_unique<MLDSASigner>(pkey);
+
+    EVP_PKEY_free(pkey);
+    pkey = nullptr;
+
+    return signer;
 }
 
 static void AbortCryptoMisconfig(const char* msg) {
