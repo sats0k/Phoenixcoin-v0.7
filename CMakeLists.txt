@@ -5,7 +5,7 @@ project(HybridSigner LANGUAGES CXX C)
 # ---------------------------------------------------------------------------
 # C++ standard
 # ---------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -14,16 +14,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---------------------------------------------------------------------------
 find_package(OpenSSL REQUIRED)
 
-if (NOT OpenSSL_VERSION VERSION_GREATER_EQUAL "3.2.0")
+if (OPENSSL_VERSION_NUMBER LESS 0x30200000L)
     message(FATAL_ERROR
-        "OpenSSL >= 3.2.0 required for ML-DSA support, found ${OpenSSL_VERSION}")
+        "OpenSSL >= 3.2.0 required for ML-DSA support")
 endif()
+
+message(STATUS "OpenSSL version: ${OPENSSL_VERSION}")
 
 # ---------------------------------------------------------------------------
 # secp256k1 (vendored, production)
 # ---------------------------------------------------------------------------
 add_library(secp256k1 STATIC
     src/secp256k1/src/secp256k1.c
+    src/secp256k1/src/precomputed_ecmult.c
+    src/secp256k1/src/precomputed_ecmult_gen.c
 )
 
 set_target_properties(secp256k1 PROPERTIES
@@ -87,21 +91,50 @@ target_link_libraries(hybrid_signer
 # ---------------------------------------------------------------------------
 # Fuzzers
 # ---------------------------------------------------------------------------
-#function(add_fuzzer name source)
-#    add_executable(${name} ${source})
+option(ENABLE_FUZZ "Build libFuzzer targets" OFF)
 
-#    target_link_libraries(${name}
-#        PRIVATE
-#            hybrid_signer
-#            OpenSSL::Crypto
-#    )
+add_library(phoenixcoin_fuzz_support STATIC
+    src/test/fuzz/fuzz_support.cpp
+)
 
-#    if (SANITIZER_FLAGS AND NOT MSVC)
-#        target_compile_options(${name} PRIVATE ${SANITIZER_FLAGS} -fno-exceptions -fno-rtti)
-#        target_link_options(${name} PRIVATE ${SANITIZER_FLAGS} -fsanitize=fuzzer)
-#    endif()
-#endfunction()
+target_include_directories(phoenixcoin_fuzz_support
+    PUBLIC
+        src
+)
 
-#add_fuzzer(fuzz_dilithium_deserialize src/test/fuzz/fuzz_dilithium_deserialize.cpp)
-#add_fuzzer(fuzz_encrypted_keys        src/test/fuzz/fuzz_encrypted_keys.cpp)
-#add_fuzzer(fuzz_hybrid_verify         src/test/fuzz/fuzz_hybrid_verify.cpp)
+function(add_fuzzer name source)
+    add_executable(${name} ${source})
+
+    target_link_libraries(${name}
+        PRIVATE
+            hybrid_signer
+            phoenixcoin_fuzz_support
+            OpenSSL::Crypto
+    )
+
+    if (ENABLE_FUZZ)
+        if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            message(FATAL_ERROR
+                "ENABLE_FUZZ requires Clang/libFuzzer. "
+                "Detected compiler: ${CMAKE_CXX_COMPILER_ID}")
+        endif()
+
+        target_compile_options(${name} PRIVATE
+            -fsanitize=fuzzer,address,undefined
+            -fno-omit-frame-pointer
+        )
+
+        target_link_options(${name} PRIVATE
+            -fsanitize=fuzzer,address,undefined
+        )
+    endif()
+endfunction()
+
+add_fuzzer(fuzz_MLDSASigner_deserialize
+    src/test/fuzz/fuzz_MLDSASigner_deserialize.cpp)
+
+add_fuzzer(fuzz_encrypted_keys
+    src/test/fuzz/fuzz_encrypted_keys.cpp)
+
+add_fuzzer(fuzz_hybrid_verify
+    src/test/fuzz/fuzz_hybrid_verify.cpp)

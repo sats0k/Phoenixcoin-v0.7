@@ -1,4 +1,4 @@
-#include "hybrid_signer.h"
+#include "hs/hybrid_signer.h"
 
 extern "C" int LLVMFuzzerTestOneInput(
     const uint8_t* data, size_t size) {
@@ -7,7 +7,7 @@ extern "C" int LLVMFuzzerTestOneInput(
     std::vector<uint8_t> password = {'f','u','z','z'};
 
     auto signer =
-        DilithiumSigner::FromEncryptedSerialized(password, input);
+        MLDSASigner::FromEncryptedSerialized(password, input);
 
     if (signer) {
         auto pub = signer->GetPublicKey();
