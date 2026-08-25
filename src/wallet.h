@@ -106,6 +106,8 @@ public:
     bool HaveHybridKeyByHash(const uint160 &keyHash) const override;
     bool GetHybridKey(const CHybridKeyID &address, CHybridKey &keyOut) const override;
     bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const override;
+    bool GetHybridKeyIDByLegacyKeyID(const CKeyID& keyID,
+                                     CHybridKeyID& hybridID) const;
 
     bool fFileBacked;
     std::string strWalletFile;

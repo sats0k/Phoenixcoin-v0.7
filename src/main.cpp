@@ -3814,7 +3814,27 @@ CBlock *CreateNewBlock(CReserveKey &reservekey) {
     txNew.vin.resize(1);
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
-    txNew.vout[0].scriptPubKey << reservekey.GetReservedKey() << OP_CHECKSIG;
+
+    CPubKey miningKey = reservekey.GetReservedKey();
+
+    if (GetBoolArg("-minehybrid", false))
+    {
+        CKeyID legacyID = miningKey.GetID();
+
+        if (!pwalletMain->EnsureHybridKey(legacyID))
+            throw std::runtime_error("CreateNewBlock(): failed to create hybrid mining key");
+
+        CHybridKeyID hybridID;
+        if (!pwalletMain->GetHybridKeyIDByLegacyKeyID(legacyID, hybridID))
+            throw std::runtime_error("CreateNewBlock(): hybrid mining key not found");
+
+        txNew.vout[0].scriptPubKey =
+            GetScriptForHybridPubKeyHash(uint160(hybridID));
+    }
+    else
+    {
+        txNew.vout[0].scriptPubKey << miningKey << OP_CHECKSIG;
+    }
 
     // Add our coinbase tx as first transaction
     pblock->vtx.push_back(txNew);

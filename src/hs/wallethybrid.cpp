@@ -232,7 +232,9 @@ bool LoadHybridKey(CWallet* wallet, const CHybridKeyDisk& disk)
 
 bool CWallet::EnsureHybridKey(const CKeyID& keyID)
 {
-    if (mapHybridSigners.count(keyID)) return true;
+    CHybridKeyID existingID;
+    if (GetHybridKeyIDByLegacyKeyID(keyID, existingID))
+        return true;
 
     CKey key;
     if (!GetKey(keyID, key)) return false;
@@ -514,4 +516,23 @@ bool CWallet::GetUnusedHybridKey(CHybridKeyID& hybridID)
     setUnusedHybridKeys.erase(setUnusedHybridKeys.begin());
 
     return true;
+}
+
+bool CWallet::GetHybridKeyIDByLegacyKeyID(const CKeyID& keyID,
+                                          CHybridKeyID& hybridID) const
+{
+    LOCK(cs_wallet);
+
+    for (std::map<CHybridKeyID, CHybridKey>::const_iterator it =
+             mapHybridKeys.begin();
+         it != mapHybridKeys.end(); ++it)
+    {
+        if (it->second.GetKeyID() == keyID)
+        {
+            hybridID = it->first;
+            return true;
+        }
+    }
+
+    return false;
 }
