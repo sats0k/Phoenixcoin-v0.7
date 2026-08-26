@@ -7,7 +7,6 @@
 #include "walletdb.h"
 #include "init.h"
 #include "serialize.h"
-#include "hs/crypto_context.h"
 #include "hs/hybrid_signer.h"
 #include "hs/wallethybrid.h"
 
