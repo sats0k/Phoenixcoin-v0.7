@@ -160,10 +160,6 @@ public:
 
     static std::unique_ptr<MLDSASigner> GenerateNew();
 
-    static std::unique_ptr<MLDSASigner>
-    FromSeed(const std::vector<uint8_t>& seed,
-             const CKeyID& keyid, const std::string& alg);
-
 private:
     EVP_PKEY* pkey_;
 };
