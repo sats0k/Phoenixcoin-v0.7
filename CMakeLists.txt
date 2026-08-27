@@ -138,3 +138,17 @@ add_fuzzer(fuzz_encrypted_keys
 
 add_fuzzer(fuzz_hybrid_verify
     src/test/fuzz/fuzz_hybrid_verify.cpp)
+
+# ---------------------------------------------------------------------------
+# Encrypted ML-DSA serialization round-trip test
+# ---------------------------------------------------------------------------
+add_executable(test_encrypted_keys
+    src/test/test_encrypted_keys.cpp
+)
+
+target_link_libraries(test_encrypted_keys
+    PRIVATE
+        hybrid_signer
+        phoenixcoin_fuzz_support
+        OpenSSL::Crypto
+)

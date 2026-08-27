@@ -506,31 +506,50 @@ MLDSASigner::FromEncryptedSerialized(
     const std::vector<uint8_t>& password,
     const std::vector<uint8_t>& in) {
 
-    if (in.size() < 4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN + ENC_TAG_LEN)
+    constexpr size_t ENC_HEADER_LEN =
+        4 + 1 + 4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN;
+
+    if (in.size() < ENC_HEADER_LEN + ENC_TAG_LEN)
         return nullptr;
 
     Cursor c(in);
-    if (!c.expect_bytes(HYBRID_MAGIC, 4)) return nullptr;
+
+    // Outer encrypted-key header.
+    if (!c.expect_bytes(HYBRID_MAGIC, 4))
+        return nullptr;
 
     uint8_t ver;
     if (!c.read_u8(ver) || ver != HYBRID_VERSION_ENC)
         return nullptr;
 
+    // Inner hybrid-signature header.
+    if (!c.expect_bytes(HYBRID_SIG_MAGIC, 4))
+        return nullptr;
+
+    uint8_t sig_ver;
+    if (!c.read_u8(sig_ver) || sig_ver != HYBRID_SIG_VERSION)
+        return nullptr;
+
     const uint8_t* salt;
     const uint8_t* nonce;
+
     if (!c.read_bytes(salt, ENC_SALT_LEN) ||
         !c.read_bytes(nonce, ENC_NONCE_LEN))
         return nullptr;
 
-    size_t header_len =
-        4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN;
+    const size_t header_len = ENC_HEADER_LEN;
+
     if (in.size() < header_len + ENC_TAG_LEN)
         return nullptr;
-    size_t ct_len = in.size() - header_len - ENC_TAG_LEN;
-    const uint8_t* ct;
-    const uint8_t* tag = &in[in.size() - ENC_TAG_LEN];
 
-    if (!c.read_bytes(ct, ct_len)) return nullptr;
+    const size_t ct_len =
+        in.size() - header_len - ENC_TAG_LEN;
+
+    const uint8_t* ct;
+    if (!c.read_bytes(ct, ct_len))
+        return nullptr;
+
+    const uint8_t* tag = &in[in.size() - ENC_TAG_LEN];
 
     uint8_t key[32];
     if (!DeriveEncKey(password, salt, key, sizeof(key)))
@@ -538,7 +557,7 @@ MLDSASigner::FromEncryptedSerialized(
 
     std::vector<uint8_t> pt;
     std::vector<uint8_t> aad = {
-        'H','Y','B','K', HYBRID_VERSION_ENC
+        'H', 'Y', 'B', 'K', HYBRID_VERSION_ENC
     };
 
     std::vector<uint8_t> ciphertext(ct, ct + ct_len);
@@ -550,7 +569,10 @@ MLDSASigner::FromEncryptedSerialized(
     }
 
     OPENSSL_cleanse(key, sizeof(key));
-    return FromSerializedV2(pt);
+
+    auto signer = FromSerialized(pt);
+    OPENSSL_cleanse(pt.data(), pt.size());
+    return signer;
 }
 
 std::unique_ptr<MLDSASigner>
