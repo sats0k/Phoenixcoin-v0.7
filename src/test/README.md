@@ -1,0 +1,108 @@
+The sources in this directory are unit test cases. Boost includes a
+unit testing framework, and since Phoenixcoin already uses Boost, the
+Boost Unit Test Framework is used for the project's unit tests.
+
+The current test executable is called `test_phoenixcoin`. The main
+test source file is `test_bitcoin.cpp`, which provides the Boost test
+module and the common test setup. Individual test cases are implemented
+in separate source files.
+
+## Current tests
+
+The currently enabled test sources are:
+
+```
+test_bitcoin.cpp
+hybrid_multisig_tests.cpp
+```
+
+`hybrid_multisig_tests.cpp` contains tests for the hybrid multisignature
+implementation, including transaction sighash types.
+
+Legacy test sources from the original Bitcoin/Phoenixcoin test suite
+are not currently enabled because they depend on interfaces or wallet
+behavior that have changed in the current codebase.
+
+## Building the tests
+
+Build the test executable with the dynamic Boost libraries:
+
+```
+make DYNAMIC=1 -f Makefile.linux test_phoenixcoin
+```
+
+If necessary, perform a clean build first:
+
+```
+make -f Makefile.linux clean
+make DYNAMIC=1 -f Makefile.linux test_phoenixcoin
+```
+
+## Running the tests
+
+Run the complete currently enabled test suite:
+
+```
+./test_phoenixcoin
+```
+
+Run only the hybrid multisignature sighash tests:
+
+```
+./test_phoenixcoin --run_test=hybrid_multisig_sighash_types
+```
+
+A successful hybrid test run should report:
+
+```
+Running 1 test case...
+
+*** No errors detected
+```
+
+## Adding tests
+
+New tests should normally be placed in a separate source file in this
+directory and use the Boost Unit Test Framework.
+
+Test cases should be grouped into an appropriate Boost test suite using
+`BOOST_AUTO_TEST_SUITE`.
+
+For example:
+
+```
+BOOST_AUTO_TEST_SUITE(my_feature_tests)
+
+BOOST_AUTO_TEST_CASE(my_test)
+{
+    ...
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+```
+
+When adding a test source to the build, add its corresponding object to
+`TESTOBJS` in `src/Makefile.linux`.
+
+For example:
+
+```
+TESTOBJS := \
+    obj-test/test_bitcoin.o \
+    obj-test/hybrid_multisig_tests.o
+```
+
+## Boost Unit Test Framework
+
+The test executable uses the Boost Unit Test Framework dynamically when
+built with `DYNAMIC=1`. The build system links against:
+
+```
+libboost_unit_test_framework.so
+```
+
+For further reading about the Boost Unit Test Framework, see:
+
+```
+http://www.alittlemadness.com/2009/03/31/c-unit-testing-with-boosttest/
+```

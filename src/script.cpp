@@ -1083,52 +1083,111 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     // [pubEC1 pubML1 ... pubECn pubMLn] n
 
                     int i = 1;
-                    if((int)stack.size() < i)
+                    if ((int)stack.size() < i)
                         return(false);
 
                     // --- n (pubkeys) ---
                     int nKeysCount = CastToBigNum(stacktop(-i)).getint();
-                    if(nKeysCount < 0 || nKeysCount > 20)  // Max 20 keys per standard script
+                    if (nKeysCount < 0 || nKeysCount > 20)
                         return(false);
 
                     nOpCount += nKeysCount;
-                    if(nOpCount > 201)
+                    if (nOpCount > 201)
                         return(false);
 
                     int ikey = ++i;
                     i += nKeysCount * 2;
 
-                    if((int)stack.size() < i)
+                    if ((int)stack.size() < i)
                         return(false);
 
                     // --- m (signatures) ---
                     int nSigsCount = CastToBigNum(stacktop(-i)).getint();
-                    if(nSigsCount < 0 || nSigsCount > nKeysCount)
+                    if (nSigsCount < 0 || nSigsCount > nKeysCount)
                         return(false);
 
-                    int isig = ++i;
+                    int isig = i + 1;
                     i += nSigsCount * 2;
 
-                    if((int)stack.size() < i)
+                    if ((int)stack.size() < i)
                         return(false);
 
                     // --- Build scriptCode ---
                     CScript scriptCode(pbegincodehash, pend);
 
-                    for(int k = 0; k < nSigsCount; k++) {
-                        valtype& vchSigEC = stacktop(-isig - (k * 2) - 1);  // ECDSA sig
-                        valtype& vchSigML = stacktop(-isig - (k * 2));      // ML-DSA sig
+                    for (int k = 0; k < nSigsCount; k++) {
+                        valtype& vchSigEC =
+                            stacktop(-isig - (k * 2) - 1);
+                        valtype& vchSigML =
+                            stacktop(-isig - (k * 2));
+
+                        if (vchSigEC.empty() || vchSigML.empty())
+                            return(false);
+
                         scriptCode.FindAndDelete(CScript(vchSigEC));
                         scriptCode.FindAndDelete(CScript(vchSigML));
                     }
 
-                    // --- Precompute sighash + message ONCE ---
-                    uint256 sighash = SignatureHash(scriptCode, txTo, nIn, nHashType);
+                    /*
+                     * Every hybrid signature pair must use the same
+                     * transaction sighash type.
+                     *
+                     * The sighash type is carried by the final byte of
+                     * both the ECDSA and ML-DSA signatures.
+                     *
+                     * Do NOT calculate the sighash using nHashType here
+                     * when nHashType == 0.  In that case the signature
+                     * itself supplies the sighash type.
+                     */
+                    int sigHashType = 0;
 
-                    std::vector<unsigned char> msg;
-                    BuildHybridMessage(sighash, msg);
+                    if (nSigsCount > 0) {
+                        valtype& firstSigEC =
+                            stacktop(-isig - 1);
+                        valtype& firstSigML =
+                            stacktop(-isig);
 
-                    if(msg.size() != 32)
+                        sigHashType = firstSigEC.back();
+
+                        if ((int)firstSigML.back() != sigHashType)
+                            return(false);
+
+                        if (nHashType != 0 &&
+                            sigHashType != nHashType)
+                            return(false);
+
+                        for (int k = 1; k < nSigsCount; k++) {
+                            valtype& vchSigEC =
+                                stacktop(-isig - (k * 2) - 1);
+                            valtype& vchSigML =
+                                stacktop(-isig - (k * 2));
+
+                            if ((int)vchSigEC.back() != sigHashType ||
+                                (int)vchSigML.back() != sigHashType)
+                                return(false);
+                        }
+                    } else {
+                        /*
+                         * A 0-of-N multisig does not have a signature from
+                         * which to derive a sighash type.  There is nothing
+                         * to verify, so preserve the normal multisig
+                         * semantics.
+                         */
+                        while (i-- > 0)
+                            popstack(stack);
+
+                        stack.push_back(vchTrue);
+                        break;
+                    }
+
+                    // --- Compute the sighash using the signature's type ---
+                    uint256 sighash =
+                        SignatureHash(scriptCode, txTo, nIn, sigHashType);
+
+                    std::vector<unsigned char> hybridMsg;
+                    BuildHybridMessage(sighash, hybridMsg);
+
+                    if (hybridMsg.size() != 32)
                         return(false);
 
                     // --- Two-pointer matching ---
@@ -1137,31 +1196,53 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
 
                     bool fSuccess = true;
 
-                    while(sigIndex < nSigsCount && keyIndex < nKeysCount) {
-                        valtype& vchSigEC = stacktop(-isig - (sigIndex * 2) - 1);
-                        valtype& vchSigML = stacktop(-isig - (sigIndex * 2));
+                    while (sigIndex < nSigsCount &&
+                           keyIndex < nKeysCount) {
 
-                        valtype& vchPubKeyEC = stacktop(-ikey - (keyIndex * 2) - 1);
-                        valtype& vchPubKeyML = stacktop(-ikey - (keyIndex * 2));
+                        valtype& vchSigEC =
+                            stacktop(-isig - (sigIndex * 2) - 1);
+                        valtype& vchSigML =
+                            stacktop(-isig - (sigIndex * 2));
 
-                        // Try match current sig with current key
+                        valtype& vchPubKeyEC =
+                            stacktop(-ikey - (keyIndex * 2) - 1);
+                        valtype& vchPubKeyML =
+                            stacktop(-ikey - (keyIndex * 2));
+
+                        /*
+                         * Both components must verify against exactly the
+                         * same transaction sighash.
+                         */
                         bool match =
-                            CheckSig(vchSigEC, vchPubKeyEC, scriptCode, txTo, nIn, nHashType) &&
-                            VerifyMLDSA(vchSigML, vchPubKeyML, msg);
+                            CheckSig(
+                                vchSigEC,
+                                vchPubKeyEC,
+                                scriptCode,
+                                txTo,
+                                nIn,
+                                sigHashType,
+                                &sighash
+                            ) &&
+                            VerifyMLDSA(
+                                std::vector<unsigned char>(
+                                    vchSigML.begin(),
+                                    vchSigML.end() - 1
+                                ),
+                                vchPubKeyML,
+                                hybridMsg
+                            );
+                        if (match)
+                            sigIndex++;
 
-                        if(match) {
-                            sigIndex++;  // consume signature
-                        }
-
-                        keyIndex++;  // always advance key
+                        keyIndex++;
                     }
 
-                    // If not all signatures matched → fail
-                    if(sigIndex != nSigsCount)
+                    // All required signatures must have matched.
+                    if (sigIndex != nSigsCount)
                         fSuccess = false;
 
                     // --- Clean stack ---
-                    while(i-- > 0)
+                    while (i-- > 0)
                         popstack(stack);
 
                     stack.push_back(fSuccess ? vchTrue : vchFalse);
