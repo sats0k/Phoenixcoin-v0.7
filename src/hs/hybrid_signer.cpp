@@ -229,8 +229,9 @@ static uint256 HashHybridMessage(const std::vector<uint8_t>& msg) {
 bool ParseHybridSignature(const std::vector<unsigned char>& in,
                           std::vector<Signature>& out)
 {
-    size_t off = 0;
+    out.clear();
 
+    size_t off = 0;
     if (in.size() < 6)
         return false;
 
@@ -248,22 +249,33 @@ bool ParseHybridSignature(const std::vector<unsigned char>& in,
 
     std::set<SigAlg> algsSeen;
     for (int i = 0; i < 2; i++) {
-        if (off + 3 > in.size())
+        if (off + 3 > in.size()) {
+            out.clear();
             return false;
+        }
 
         uint8_t alg = in[off++];
 
-        // Ensure we don't have duplicate algorithms
-        SigAlg sig_alg = static_cast<SigAlg>(alg);
-        if (algsSeen.count(sig_alg) > 0)
+        if (alg != static_cast<uint8_t>(SigAlg::ECDSA_SECP256K1) &&
+            alg != static_cast<uint8_t>(SigAlg::ML_DSA_65)) {
+            out.clear();
             return false;
+        }
+
+        SigAlg sig_alg = static_cast<SigAlg>(alg);
+        if (algsSeen.count(sig_alg) > 0) {
+            out.clear();
+            return false;
+        }
         algsSeen.insert(sig_alg);
 
         uint16_t len = (uint16_t(in[off]) << 8) | uint16_t(in[off + 1]);
         off += 2;
 
-        if (len == 0 || off + len > in.size())
+        if (len == 0 || off + len > in.size()) {
+            out.clear();
             return false;
+        }
 
         out.push_back(Signature{
             sig_alg,
@@ -273,7 +285,12 @@ bool ParseHybridSignature(const std::vector<unsigned char>& in,
         off += len;
     }
 
-    return off == in.size(); // no trailing garbage
+    if (off != in.size()) {
+        out.clear();
+        return false;
+    }
+
+    return true;
 }
 
 /* ------------------------------------------------------------------------- */
