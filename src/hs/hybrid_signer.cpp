@@ -247,11 +247,19 @@ bool ParseHybridSignature(const std::vector<unsigned char>& in,
     if (count != 2)
         return false;
 
+    std::set<SigAlg> algsSeen;
     for (int i = 0; i < 2; i++) {
         if (off + 3 > in.size())
             return false;
 
         uint8_t alg = in[off++];
+
+        // Ensure we don't have duplicate algorithms
+        SigAlg sig_alg = static_cast<SigAlg>(alg);
+        if (algsSeen.count(sig_alg) > 0)
+            return false;
+        algsSeen.insert(sig_alg);
+
         uint16_t len = (uint16_t(in[off]) << 8) | uint16_t(in[off + 1]);
         off += 2;
 
@@ -259,7 +267,7 @@ bool ParseHybridSignature(const std::vector<unsigned char>& in,
             return false;
 
         out.push_back(Signature{
-            static_cast<SigAlg>(alg),
+            sig_alg,
             std::vector<uint8_t>(in.begin() + off,
                                  in.begin() + off + len)
         });
