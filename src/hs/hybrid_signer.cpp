@@ -72,15 +72,14 @@ static void AbortCryptoMisconfig(const char* msg) {
 }
 
 static void EnsureMlDsaAvailable() {
-    static bool checked = false;
-    if (checked) return;
-    checked = true;
-
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA_65, nullptr);
-    if (!ctx) {
-        AbortCryptoMisconfig("ML-DSA-65 not available in this OpenSSL build");
-    }
-    EVP_PKEY_CTX_free(ctx);
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+        EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA_65, nullptr);
+        if (!ctx) {
+            AbortCryptoMisconfig("ML-DSA-65 not available in this OpenSSL build");
+        }
+        EVP_PKEY_CTX_free(ctx);
+    });
 }
 
 using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
