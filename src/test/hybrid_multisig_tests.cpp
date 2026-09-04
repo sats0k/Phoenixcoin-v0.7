@@ -94,12 +94,6 @@ BOOST_AUTO_TEST_CASE(hybrid_multisig_sighash_types)
         uint256 sighash =
             SignatureHash(scriptPubKey, tx, 0, hashType);
 
-OutputDebugStringF(
-    "HYBRID TEST: hashType=0x%02x sighash=%s\n",
-    hashType,
-    sighash.ToString().c_str()
-);
-
         /*
          * ECDSA component.
          */
@@ -111,15 +105,21 @@ OutputDebugStringF(
         sigEC.push_back((unsigned char)hashType);
 
         /*
-         * ML-DSA signs the canonical hybrid message derived from
-         * exactly the same transaction sighash.
+         * ML-DSA signs the domain-separated canonical sighash preimage.
+         * This must exactly match OP_CHECKMULTIHYBRIDSIG verification.
          */
-        std::vector<unsigned char> hybridMsg(32);
+        std::vector<unsigned char> sighash_preimage;
 
-        memcpy(
-            hybridMsg.data(),
-            &sighash,
-            32);
+        BOOST_REQUIRE(
+            ConstructSignatureHashPreimage(
+                scriptPubKey,
+                tx,
+                0,
+                hashType,
+                sighash_preimage));
+
+        std::vector<unsigned char> hybridMsg =
+            BuildHybridMessage(sighash_preimage);
 
         std::vector<unsigned char> sigML;
 

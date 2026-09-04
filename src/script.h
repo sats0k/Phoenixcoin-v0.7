@@ -611,4 +611,15 @@ bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsig
 // combine them intelligently and return the result.
 CScript CombineSignatures(CScript scriptPubKey, const CTransaction& txTo, unsigned int nIn, const CScript& scriptSig1, const CScript& scriptSig2);
 
+/**
+ * Canonical sighash preimage construction
+ *
+ * Constructs the exact byte sequence that gets hashed for signature operations.
+ * This is used by both ECDSA (which hashes the result) and ML-DSA (which applies
+ * domain separation to the preimage).
+ */
+bool ConstructSignatureHashPreimage(
+    const CScript& scriptCode, const CTransaction& txTo, unsigned int nIn,
+    int nHashType, std::vector<unsigned char>& preimageOut);
+
 #endif /* SCRIPT_H */

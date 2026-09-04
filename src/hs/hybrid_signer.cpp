@@ -29,6 +29,9 @@
  *  - secp256k1 context is VERIFY-only and never mutated after initialization
  *  - ML-DSA-65 support must be present and functional at runtime
  *  - Hybrid verification requires exactly one signature per algorithm
+ *  - ConstructSignatureHashPreimage() is the canonical preimage constructor
+ *  - BuildHybridMessage() applies domain separation to the preimage for ML-DSA
+ *  - The caller is responsible for constructing the canonical preimage.
  */
 
 std::unique_ptr<MLDSASigner> MLDSASigner::GenerateNew() {

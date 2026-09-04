@@ -28,12 +28,62 @@ using namespace boost;
 
 // ==================== Hybrid Helpers ====================
 
-// Build the "hybrid message" from the sighash
-void BuildHybridMessage(const uint256& sighash, std::vector<unsigned char>& outMsg)
+// Canonical sighash preimage construction
+// This is the exact byte sequence that gets hashed for ECDSA verification
+// and domain-separated for ML-DSA verification.
+// Returns true on success, false on error (invalid nIn or SIGHASH_SINGLE index out of range)
+bool ConstructSignatureHashPreimage(
+    const CScript& scriptCode,
+    const CTransaction& txTo,
+    unsigned int nIn,
+    int nHashType,
+    std::vector<unsigned char>& preimageOut)
 {
-    // Copy the raw 32 bytes of the uint256
-    outMsg.resize(32);
-    memcpy(outMsg.data(), &sighash, 32);
+
+    if(nIn >= txTo.vin.size())
+        return false;  // Error: invalid input index
+
+    CScript scriptCodeTmp = scriptCode;
+    CTransaction txTmp(txTo);
+
+    // Remove codeseparators
+    scriptCodeTmp.FindAndDelete(CScript(OP_CODESEPARATOR));
+
+    // Blank out other inputs' signatures
+    for(unsigned int i = 0; i < txTmp.vin.size(); i++)
+        txTmp.vin[i].scriptSig = CScript();
+    txTmp.vin[nIn].scriptSig = scriptCodeTmp;
+
+    // Blank out some of the outputs based on sighash type
+    if((nHashType & 0x1f) == SIGHASH_NONE) {
+        txTmp.vout.clear();
+        for(unsigned int i = 0; i < txTmp.vin.size(); i++)
+            if(i != nIn)
+                txTmp.vin[i].nSequence = 0;
+    } else if((nHashType & 0x1f) == SIGHASH_SINGLE) {
+        unsigned int nOut = nIn;
+        if(nOut >= txTmp.vout.size())
+            return false;  // Error: index out of range
+        txTmp.vout.resize(nOut+1);
+        for(unsigned int i = 0; i < nOut; i++)
+            txTmp.vout[i].SetNull();
+        for(unsigned int i = 0; i < txTmp.vin.size(); i++)
+            if(i != nIn)
+                txTmp.vin[i].nSequence = 0;
+    }
+
+    // Blank out other inputs completely for SIGHASH_ANYONECANPAY
+    if(nHashType & SIGHASH_ANYONECANPAY) {
+        txTmp.vin[0] = txTmp.vin[nIn];
+        txTmp.vin.resize(1);
+    }
+
+    // Serialize the preimage
+    CDataStream ss(SER_GETHASH, 0);
+    ss.reserve(10000);
+    ss << txTmp << nHashType;
+    preimageOut.assign(ss.begin(), ss.end());
+    return true;
 }
 
 // -------------------- Hybrid-compatible CheckSig --------------------
@@ -1184,11 +1234,15 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
                     uint256 sighash =
                         SignatureHash(scriptCode, txTo, nIn, sigHashType);
 
-                    std::vector<unsigned char> hybridMsg;
-                    BuildHybridMessage(sighash, hybridMsg);
+                    // Construct canonical preimage for ML-DSA domain separation
+                    std::vector<unsigned char> sighash_preimage;
+                    if (!ConstructSignatureHashPreimage(scriptCode, txTo, nIn,
+                                                        sigHashType,
+                                                        sighash_preimage))
+                        return false;
 
-                    if (hybridMsg.size() != 32)
-                        return(false);
+                    std::vector<unsigned char> hybridMsg =
+                        BuildHybridMessage(sighash_preimage);
 
                     // --- Two-pointer matching ---
                     int sigIndex = 0;
@@ -1263,53 +1317,16 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, co
     return(true);
 }
 
-uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType) {
-
-    if(nIn >= txTo.vin.size()) {
-        printf("ERROR: SignatureHash() : nIn=%d out of range\n", nIn);
+uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo,
+                      unsigned int nIn, int nHashType) {
+    std::vector<unsigned char> preimage;
+    if (!ConstructSignatureHashPreimage(scriptCode, txTo, nIn, nHashType,
+                                        preimage)) {
+        printf("ERROR: SignatureHash() : invalid parameters\n");
         return 1;
     }
-    CTransaction txTmp(txTo);
-    // In case concatenating two scripts ends up with two codeseparators,
-    // or an extra one at the end, this prevents all those possible incompatibilities.
-    scriptCode.FindAndDelete(CScript(OP_CODESEPARATOR));
-    // Blank out other inputs' signatures
-    for(unsigned int i = 0; i < txTmp.vin.size(); i++)
-        txTmp.vin[i].scriptSig = CScript();
-    txTmp.vin[nIn].scriptSig = scriptCode;
-    // Blank out some of the outputs
-    if((nHashType & 0x1f) == SIGHASH_NONE) {
-        // Wildcard payee
-        txTmp.vout.clear();
-        // Let the others update at will
-        for(unsigned int i = 0; i < txTmp.vin.size(); i++)
-            if(i != nIn)
-                txTmp.vin[i].nSequence = 0;
-    } else if((nHashType & 0x1f) == SIGHASH_SINGLE) {
-        // Only lock-in the txout payee at same index as txin
-        unsigned int nOut = nIn;
-        if(nOut >= txTmp.vout.size()) {
-            printf("ERROR: SignatureHash() : nOut=%d out of range\n", nOut);
-            return 1;
-        }
-        txTmp.vout.resize(nOut+1);
-        for(unsigned int i = 0; i < nOut; i++)
-            txTmp.vout[i].SetNull();
-        // Let the others update at will
-        for(unsigned int i = 0; i < txTmp.vin.size(); i++)
-            if(i != nIn)
-                txTmp.vin[i].nSequence = 0;
-    }
-    // Blank out other inputs completely, not recommended for open transactions
-    if(nHashType & SIGHASH_ANYONECANPAY) {
-        txTmp.vin[0] = txTmp.vin[nIn];
-        txTmp.vin.resize(1);
-    }
-    // Serialize and hash
-    CDataStream ss(SER_GETHASH, 0);
-    ss.reserve(10000);
-    ss << txTmp << nHashType;
-    return Hash(ss.begin(), ss.end());
+
+    return Hash(preimage.begin(), preimage.end());
 }
 
 // Valid signature cache, to avoid doing expensive ECDSA signature checking
@@ -1583,7 +1600,13 @@ bool SignHybridTransaction(
     CScript scriptCode(scriptPubKey);
     uint256 hash = SignatureHash(scriptCode, txTo, nIn, nHashType);
     std::vector<unsigned char> hybridMsg;
-    BuildHybridMessage(hash, hybridMsg);
+
+    std::vector<unsigned char> sighash_preimage;
+    if (!ConstructSignatureHashPreimage(scriptCode, txTo, nIn, nHashType,
+                                        sighash_preimage))
+    return false;
+
+    hybridMsg = BuildHybridMessage(sighash_preimage);
 
     if (scriptType == TX_HYBRID_PUBKEY)
     {
@@ -2158,7 +2181,13 @@ bool SignHybridTx(const CKeyStore& keystore, const CScript& scriptPubKey,
     uint256 sighash = SignatureHash(scriptCode, txTo, nIn, nHashType);
 
     std::vector<unsigned char> hybridMsg;
-    BuildHybridMessage(sighash, hybridMsg);
+
+    std::vector<unsigned char> sighash_preimage;
+    if (!ConstructSignatureHashPreimage(scriptCode, txTo, nIn, nHashType,
+                                        sighash_preimage))
+    return false;
+
+    hybridMsg = BuildHybridMessage(sighash_preimage);
 
     if (scriptType == TX_HYBRID_PUBKEY)
     {

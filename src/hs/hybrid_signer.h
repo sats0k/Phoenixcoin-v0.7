@@ -191,8 +191,11 @@ private:
 /* ------------------------------------------------------------------------- */
 
 // Canonical message builder for hybrid signatures.
+// Takes the complete sighash preimage produced by the transaction
+// sighash construction, including SIGHASH type.
+// Prepends "BIT-HYBRID-SIG-v1" for cryptographic domain separation.
 // MUST be used by callers before SignAll().
-std::vector<uint8_t>
+extern std::vector<uint8_t>
 BuildHybridMessage(const std::vector<uint8_t>& tx_sighash_preimage);
 
 #endif  // HYBRID_SIGNER_H
