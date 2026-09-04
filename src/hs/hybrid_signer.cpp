@@ -622,7 +622,9 @@ MLDSASigner::FromSerialized(const std::vector<uint8_t>& in) {
         return nullptr;
     }
 
-    return std::make_unique<MLDSASigner>(pkey);
+    auto signer = std::make_unique<MLDSASigner>(pkey);
+    EVP_PKEY_free(pkey);
+    return signer;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -692,7 +694,10 @@ MLDSASigner::FromSerializedV2(const std::vector<uint8_t>& in) {
         EVP_PKEY_free(pkey);
         return nullptr;
     }
-    return std::make_unique<MLDSASigner>(pkey);
+
+    auto signer = std::make_unique<MLDSASigner>(pkey);
+    EVP_PKEY_free(pkey);
+    return signer;
 }
 
 /* ------------------------------------------------------------------------- */
