@@ -1490,6 +1490,61 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
         }
     }
 
+    {
+        // Hybrid pay-to-hybrid-multisig:
+        //
+        //   OP_<m> <pubEC1> <pubML1> ... <pubECN> <pubMLN> OP_<n> OP_CHECKMULTIHYBRIDSIG
+        //
+        // Each hybrid key is two separate pushes (ECDSA then ML-DSA), matching
+        // the OP_CHECKMULTIHYBRIDSIG verifier's stack layout.
+        CScript::const_iterator pc = scriptPubKey.begin();
+        opcodetype opcode;
+        std::vector<unsigned char> vch;
+
+        // m
+        if (scriptPubKey.GetOp(pc, opcode) &&
+            (opcode == OP_0 || (opcode >= OP_1 && opcode <= OP_16))) {
+            int m = CScript::DecodeOP_N(opcode);
+
+            // pubkey pairs: <pubEC> <pubML> ...
+            bool fKeys = true;
+            std::vector<std::vector<unsigned char> > keys;
+            while (fKeys && scriptPubKey.GetOp(pc, opcode, vch)) {
+                if (vch.size() >= 33 && vch.size() <= 120) {
+                    keys.push_back(vch);
+                    if (!scriptPubKey.GetOp(pc, opcode, vch) ||
+                        vch.size() != ML_DSA_65_PUBKEY_SIZE) {
+                        fKeys = false;
+                        break;
+                    }
+                    keys.push_back(vch);
+                } else if (opcode >= OP_1 && opcode <= OP_16) {
+                    fKeys = false;   // reached n
+                } else {
+                    fKeys = false;
+                    keys.clear();
+                    break;
+                }
+            }
+
+            int n = fKeys ? 0 : CScript::DecodeOP_N(opcode);
+            if (n >= 1 && keys.size() % 2 == 0 &&
+                keys.size() / 2 == (size_t)n &&
+                scriptPubKey.GetOp(pc, opcode) &&
+                opcode == OP_CHECKMULTIHYBRIDSIG &&
+                pc == scriptPubKey.end() &&
+                m >= 1 && m <= n) {
+                typeRet = TX_HYBRID_MULTISIG;
+                vSolutionsRet.clear();
+                vSolutionsRet.push_back(valtype(1, (unsigned char)m));
+                vSolutionsRet.insert(vSolutionsRet.end(),
+                                     keys.begin(), keys.end());
+                vSolutionsRet.push_back(valtype(1, (unsigned char)n));
+                return true;
+            }
+        }
+    }
+
     // Templates
     static map<txnouttype, CScript> mTemplates;
     if(mTemplates.empty()) {
@@ -1823,7 +1878,10 @@ int ScriptSigArgsExpected(txnouttype t, const std::vector<std::vector<unsigned c
     case TX_HYBRID_PUBKEYHASH:
         return 4;
     case TX_HYBRID_MULTISIG:
-        return -1;
+        if(vSolutions.size() < 1 || vSolutions[0].size() < 1)
+            return -1;
+        // Each hybrid signature is a two-element stack item (sigEC, sigML).
+        return vSolutions[0][0] * 2;
     }
     return -1;
 }
@@ -1837,6 +1895,16 @@ bool IsStandard(const CScript& scriptPubKey) {
         unsigned char m = vSolutions.front()[0];
         unsigned char n = vSolutions.back()[0];
         // Support up to x-of-3 multisig txns as standard
+        if(n < 1 || n > 3)
+            return(false);
+        if(m < 1 || m > n)
+            return(false);
+    }
+    if(whichType == TX_HYBRID_MULTISIG) {
+        unsigned char m = vSolutions.front()[0];
+        unsigned char n = vSolutions.back()[0];
+        // Keep parity with regular multisig: up to x-of-3.
+        // Each key is two pushes, so a full N-of-N is already large.
         if(n < 1 || n > 3)
             return(false);
         if(m < 1 || m > n)
@@ -2258,16 +2326,23 @@ bool SignHybridTx(const CKeyStore& keystore, const CScript& scriptPubKey,
 
     else if (scriptType == TX_HYBRID_MULTISIG)
     {
-        int nM = CScript::DecodeOP_N((opcodetype)solutions[0][0]);
-        int nN = CScript::DecodeOP_N((opcodetype)solutions[solutions.size() - 1][0]);
+        // solutions: [0] = m, [1..2n] = key pairs (ecdsa, mldsa), [last] = n
+        // scriptSig layout (matches OP_CHECKMULTIHYBRIDSIG):
+        //   [sigEC1][sigML1] ... [sigECm][sigMLm]   (signatures only)
+        if (solutions.size() < 3 || solutions[0].size() != 1)
+            return false;
 
-        scriptSigRet << OP_0;
+        int nM = solutions[0][0];
+        int nN = solutions[solutions.size() - 1][0];
+        if (nM < 1 || nN < 1 || nM > nN ||
+            solutions.size() != 2 + (size_t)nN * 2)
+            return false;
 
         int signed_count = 0;
-        for (int i = 1; i <= nN && signed_count < nM; i++)
+        for (int key = 0; key < nN && signed_count < nM; key++)
         {
-            CPubKey pubKey(solutions[i]);
-            CKeyID keyID = pubKey.GetID();
+            CPubKey ecdsaPub(solutions[1 + key * 2]);
+            CKeyID keyID = ecdsaPub.GetID();
 
             CHybridKey hybridKey;
             if (!keystore.GetHybridKey(keyID, hybridKey))
@@ -2281,22 +2356,15 @@ bool SignHybridTx(const CKeyStore& keystore, const CScript& scriptPubKey,
             ecdsaSig.push_back((unsigned char)nHashType);
 
             std::vector<unsigned char> mldsaSig;
-            if (!hybridKey.mldsaSigner)
-                return false;
-
-            if (!hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
+            if (!hybridKey.mldsaSigner ||
+                !hybridKey.mldsaSigner->Sign(hybridMsg, mldsaSig))
                 return false;
 
             mldsaSig.push_back((unsigned char)nHashType);
 
-            std::vector<unsigned char> ecdsaPub = hybridKey.secpPub.Raw();
-            std::vector<unsigned char> mldsaPub = hybridKey.mldsaSigner->GetPublicKey();
-
             scriptSigRet
                 << ecdsaSig
-                << mldsaSig
-                << ecdsaPub
-                << mldsaPub;
+                << mldsaSig;
 
             signed_count++;
         }
@@ -2679,10 +2747,13 @@ return CScript()
 /**
  * Create an M-of-N Hybrid Multisignature output.
  *
- * Note:
- * Consensus support for OP_CHECKMULTIHYBRIDSIG is implemented.
- * This helper is currently unused by the wallet/RPC layer, but is
- * retained for future hybrid multisig support.
+ * Script layout (matches OP_CHECKMULTIHYBRIDSIG's expectations):
+ *
+ *   OP_<m> <ecdsaPub1> <mldsaPub1> ... <ecdsaPubN> <mldsaPubN> OP_<n> OP_CHECKMULTIHYBRIDSIG
+ *
+ * Each hybrid public key is pushed as TWO separate stack items (the ECDSA
+ * public key followed by the ML-DSA public key), matching how the verifier
+ * reads keys via stacktop(-ikey-1)/stacktop(-ikey).
  */
 CScript GetScriptForHybridMultisig(int nRequired,
                                   const std::vector<CHybridPubKey>& keys) {
@@ -2693,7 +2764,7 @@ CScript GetScriptForHybridMultisig(int nRequired,
         if (!key.IsValid()) {
             return CScript();  // Invalid input
         }
-        script << key.Serialize();
+        script << key.ecdsaPubKey << key.mldsaPubKey;
     }
 
     script << CScript::EncodeOP_N(keys.size())
