@@ -363,6 +363,9 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
         // IsStandard() call returns false
         vector<vector<unsigned char> > stack;
 
+        if (!EvalScript(stack, vin[i].scriptSig, *this, i, 0))
+            return false;
+
         if (whichType == TX_SCRIPTHASH)
         {
             if (stack.empty())
@@ -381,12 +384,6 @@ bool CTransaction::AreInputsStandard(const MapPrevTx& mapInputs) const
                 return false;
             nArgsExpected += tmpExpected;
         }
-
-        if (!EvalScript(stack, vin[i].scriptSig, *this, i, 0))
-            return false;
-
-        if (stack.size() != (unsigned)nArgsExpected)
-            return false;
     }
 
     return true;
