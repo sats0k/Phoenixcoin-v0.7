@@ -324,8 +324,6 @@ The Quantum implementation currently uses:
 | NeoScrypt         | Proof of work                            |
 | LevelDB           | Blockchain/wallet database storage       |
 
-The code also initializes an OpenSSL provider context for the OQS provider where required by the cryptographic implementation.
-
 ---
 
 # Software Requirements
@@ -336,7 +334,6 @@ Minimum versions used by this development branch include:
 
 * **OpenSSL 3.5 or newer**
 * **Boost 1.89 or newer**
-* **OQS provider 0.12.0-dev or compatible provider environment**
 * C++20-capable compiler
 
 ---

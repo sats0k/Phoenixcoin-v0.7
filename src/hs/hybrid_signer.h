@@ -40,9 +40,9 @@ static constexpr size_t ENC_TAG_LEN   = 16;
 /*  Requirements                                                             */
 /* ------------------------------------------------------------------------- */
 
-// ML-DSA support landed in OpenSSL 3.2
-#if OPENSSL_VERSION_NUMBER < 0x30200000L
-#error "Hybrid signatures require OpenSSL 3.2+ (ML-DSA support)"
+// ML-DSA support landed in OpenSSL 3.5
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
+#error "Hybrid signatures require OpenSSL 3.5+ (ML-DSA support)"
 #endif
 
 /* ------------------------------------------------------------------------- */
