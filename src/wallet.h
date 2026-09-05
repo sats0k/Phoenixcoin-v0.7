@@ -95,11 +95,22 @@ public:
     bool GetUnusedHybridKey(CHybridKeyID& hybridID);
     bool fFillingKeyPool;
     void LoadHybridKeys();
+    bool DecryptHybridKeys(const CKeyingMaterial& vMasterKey);
     bool ZapWalletTransactions();
+
+    // Builds the at-rest CHybridKeyDisk for hk, encrypting the private
+    // material with the wallet master key when the wallet is encrypted.
+    // Throws if the wallet is encrypted but locked (cannot encrypt).
+    CHybridKeyDisk MakeHybridKeyDisk(const CHybridKey& hk);
 
     std::map<CHybridKeyID, CHybridKey> mapHybridKeys;
     std::map<CHybridKeyID, std::unique_ptr<MLDSASigner>> mapHybridSigners;
     std::set<CHybridKeyID> setUnusedHybridKeys;
+
+    // Encrypted-at-rest hybrid key records for encrypted wallets.
+    // Populated at startup while the wallet is locked; decrypted into
+    // mapHybridKeys/mapHybridSigners on first unlock.
+    std::map<CHybridKeyID, CHybridKeyDisk> mapHybridKeyDisk;
 
     // ===== Hybrid key access methods (override from CKeyStore) =====
     bool HaveHybridKey(const CHybridKeyID &address) const override;

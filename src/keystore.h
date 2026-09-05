@@ -241,6 +241,13 @@ protected:
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn);
 
+    // In-memory wallet master key. Only valid while the wallet is unlocked
+    // (empty while locked). Callers must hold the wallet/keystore lock.
+    const CKeyingMaterial& GetMasterKey() const
+    {
+        return vMasterKey;
+    }
+
 public:
     CCryptoKeyStore() : fUseCrypto(false)
     {

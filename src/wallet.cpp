@@ -167,7 +167,11 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase)
             if (!crypter.Decrypt(pMasterKey.second.vchCryptedKey, vMasterKey))
                 return false;
             if (CCryptoKeyStore::Unlock(vMasterKey))
+            {
+                if (!DecryptHybridKeys(vMasterKey))
+                    return false;
                 return true;
+            }
         }
     }
     return false;
@@ -333,6 +337,27 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             if (fFileBacked)
                 pwalletdbEncryption->TxnAbort();
             exit(1); //We now probably have half of our keys encrypted in memory, and half not...die and let the user reload their unencrypted wallet.
+        }
+
+        // Encrypt hybrid (quantum) keys with the same master key so that the
+        // private material is no longer stored in the clear in wallet.dat.
+        if (fFileBacked)
+        {
+            for (const std::pair<const CHybridKeyID, CHybridKey>& entry : mapHybridKeys)
+            {
+                try {
+                    CHybridKeyDisk disk = CHybridKeyDisk::FromMemoryEncrypted(entry.second, vMasterKey);
+                    if (!pwalletdbEncryption->WriteHybridKey(entry.first, disk)) {
+                        printf("EncryptWallet() : failed to write encrypted hybrid key\n");
+                        pwalletdbEncryption->TxnAbort();
+                        exit(1);
+                    }
+                } catch (const std::exception& e) {
+                    printf("EncryptWallet() : hybrid key encryption failed: %s\n", e.what());
+                    pwalletdbEncryption->TxnAbort();
+                    exit(1);
+                }
+            }
         }
 
         // Encryption was introduced in version 0.4.0
