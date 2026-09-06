@@ -44,6 +44,12 @@ def load_hybrid_message(device):
     return load_bin("hybrid_message.bin", device)
 
 # =====================================================================
+# ML-DSA-65 signature
+# =====================================================================
+def load_mldsa65_sig(device):
+    return load_bin("mldsa65_sig.bin", device)
+
+# =====================================================================
 # ML-DSA-65 serialized private key
 # =====================================================================
 def load_mldsa65_serialized(device):
@@ -136,6 +142,7 @@ def load_all_vectors(device):
     return {
         "secp256k1": load_secp256k1(device),
         "hybrid_message": load_hybrid_message(device),
+        "mldsa65_sig": load_mldsa65_sig(device),
         "mldsa65_serialized": load_mldsa65_serialized(device),
         "mldsa65_encrypted": load_mldsa65_encrypted(device),
     }
@@ -147,6 +154,7 @@ def hybrid_crypto_harness(vectors, device):
     return {
         "secp256k1": vectors["secp256k1"],
         "hybrid_message": vectors["hybrid_message"],
+        "mldsa65_sig": vectors["mldsa65_sig"],
         "mldsa65_serialized": vectors["mldsa65_serialized"],
         "mldsa65_decrypted_serialized":
             aes_gcm_decrypt(vectors["mldsa65_encrypted"], device),
@@ -189,6 +197,7 @@ if __name__ == "__main__":
     print("secp256k1 pub:", results["secp256k1"]["pub"].shape)
     print("secp256k1 sig:", results["secp256k1"]["sig"].shape)
     print("hybrid message:", results["hybrid_message"].shape)
+    print("ML-DSA-65 sig:", results["mldsa65_sig"].shape)
     print("ML-DSA-65 pub:", results["mldsa65_serialized"]["pub"].shape)
     print("ML-DSA-65 priv:", results["mldsa65_serialized"]["priv"].shape)
     print("DECRYPTED serialized:",
