@@ -275,8 +275,11 @@ std::unique_ptr<MLDSASigner> GetSignerFromKey(const CHybridKey& hk)
     if (!pkey)
         return nullptr;
 
-    EVP_PKEY_up_ref(pkey);
-    return std::make_unique<MLDSASigner>(pkey);
+    try {
+        return std::make_unique<MLDSASigner>(pkey);
+    } catch (const std::exception&) {
+        return nullptr;
+    }
 }
 
 // -----------------------------
@@ -346,13 +349,15 @@ bool LoadHybridKey(CWallet* wallet, const CHybridKeyDisk& disk,
         if (!pkey)
             throw std::runtime_error("MLDSA private key decode failed");
 
-        // Construct MLDSASigner
-        mem.mldsaSigner = std::make_unique<MLDSASigner>(pkey);
-        signer = std::make_unique<MLDSASigner>(pkey);
+        // Guard the reference returned by d2i_AutoPrivateKey(); the ctor
+        // up_refs for each signer, the guard releases the d2i ref (also on
+        // exception unwind).
+        std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_guard(
+            pkey, &EVP_PKEY_free);
 
-        // Release the reference returned by d2i_AutoPrivateKey().
-        EVP_PKEY_free(pkey);
-        pkey = nullptr;
+        // Construct MLDSASigner
+        mem.mldsaSigner = std::make_unique<MLDSASigner>(pkey_guard.get());
+        signer = std::make_unique<MLDSASigner>(pkey_guard.get());
 
         if (!ValidateHybridKey(mem))
             throw std::runtime_error("Hybrid key validation failed");
@@ -407,7 +412,6 @@ bool CWallet::EnsureHybridKey(const CKeyID& keyID)
         EVP_PKEY* pkey = hk.mldsaSigner->GetKey();
         if (!pkey) return false;
 
-        EVP_PKEY_up_ref(pkey);
         signer = std::make_unique<MLDSASigner>(pkey);
 
     } catch (const std::exception& e) {

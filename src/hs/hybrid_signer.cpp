@@ -13,10 +13,12 @@
 #include <cassert>
 #include <vector>
 #include <memory>
+#include <set>
 #include <cstring>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
 
 #include <secp256k1.h>
 
@@ -34,12 +36,15 @@
  *  - The caller is responsible for constructing the canonical preimage.
  */
 
+using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+using EVP_PKEY_ptr   = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
+
 std::unique_ptr<MLDSASigner> MLDSASigner::GenerateNew() {
 
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA_65, nullptr);
     if (!ctx) {
         fprintf(stderr, "Failed to create EVP_PKEY_CTX for ML-DSA-65\n");
-        std::abort();
+        return nullptr;
     }
 
     if (EVP_PKEY_keygen_init(ctx) <= 0) {
@@ -48,27 +53,23 @@ std::unique_ptr<MLDSASigner> MLDSASigner::GenerateNew() {
         return nullptr;
     }
 
-    EVP_PKEY* pkey = nullptr;
-    if (EVP_PKEY_keygen(ctx, &pkey) <= 0) {
+    EVP_PKEY* raw_pkey = nullptr;
+    if (EVP_PKEY_keygen(ctx, &raw_pkey) <= 0) {
         fprintf(stderr, "EVP_PKEY_keygen failed\n");
         EVP_PKEY_CTX_free(ctx);
         return nullptr;
     }
 
     EVP_PKEY_CTX_free(ctx);
-    std::unique_ptr<MLDSASigner> signer =
-    std::make_unique<MLDSASigner>(pkey);
 
-    EVP_PKEY_free(pkey);
-    pkey = nullptr;
-
-    return signer;
+    EVP_PKEY_ptr pkey(raw_pkey, &EVP_PKEY_free);
+    return std::make_unique<MLDSASigner>(pkey.get());
 }
 
-static void AbortCryptoMisconfig(const char* msg) {
+static void ThrowCryptoMisconfig(const char* msg) {
     ERR_print_errors_fp(stderr);
     fprintf(stderr, "FATAL CRYPTO ERROR: %s\n", msg);
-    std::abort();
+    throw std::runtime_error(msg);
 }
 
 static void EnsureMlDsaAvailable() {
@@ -76,14 +77,11 @@ static void EnsureMlDsaAvailable() {
     std::call_once(flag, []() {
         EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ML_DSA_65, nullptr);
         if (!ctx) {
-            AbortCryptoMisconfig("ML-DSA-65 not available in this OpenSSL build");
+            ThrowCryptoMisconfig("ML-DSA-65 not available in this OpenSSL build");
         }
         EVP_PKEY_CTX_free(ctx);
     });
 }
-
-using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-using EVP_PKEY_ptr   = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
 
 static EVP_MD_CTX_ptr MakeMdCtx() {
     return EVP_MD_CTX_ptr(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
@@ -342,14 +340,14 @@ std::vector<uint8_t> Secp256k1Signer::GetPublicKey() const {
 
 MLDSASigner::MLDSASigner(EVP_PKEY* key) : pkey_(key) {
     if (!pkey_)
-        AbortCryptoMisconfig("Null EVP_PKEY passed to MLDSASigner");
+        ThrowCryptoMisconfig("Null EVP_PKEY passed to MLDSASigner");
 
     EnsureMlDsaAvailable();
 
     const char* type = EVP_PKEY_get0_type_name(pkey_);
     if (!type || std::string(type) != "ML-DSA-65") {
         fprintf(stderr, "MLDSA key type = %s\n", type ? type : "(null)");
-        AbortCryptoMisconfig("Invalid EVP_PKEY passed to MLDSASigner");
+        ThrowCryptoMisconfig("Invalid EVP_PKEY passed to MLDSASigner");
     }
 
     EVP_PKEY_up_ref(pkey_);
@@ -638,9 +636,14 @@ MLDSASigner::FromSerialized(const std::vector<uint8_t>& in) {
         return nullptr;
     }
 
-    auto signer = std::make_unique<MLDSASigner>(pkey);
-    EVP_PKEY_free(pkey);
-    return signer;
+    try {
+        auto signer = std::make_unique<MLDSASigner>(pkey);
+        EVP_PKEY_free(pkey);
+        return signer;
+    } catch (const std::exception&) {
+        if (pkey) EVP_PKEY_free(pkey);
+        return nullptr;
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -711,9 +714,14 @@ MLDSASigner::FromSerializedV2(const std::vector<uint8_t>& in) {
         return nullptr;
     }
 
-    auto signer = std::make_unique<MLDSASigner>(pkey);
-    EVP_PKEY_free(pkey);
-    return signer;
+    try {
+        auto signer = std::make_unique<MLDSASigner>(pkey);
+        EVP_PKEY_free(pkey);
+        return signer;
+    } catch (const std::exception&) {
+        if (pkey) EVP_PKEY_free(pkey);
+        return nullptr;
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -723,7 +731,7 @@ MLDSASigner::FromSerializedV2(const std::vector<uint8_t>& in) {
 void HybridSigner::Add(std::unique_ptr<ISigner> signer) {
     for (const auto& s : signers_) {
         if (s->Algorithm() == signer->Algorithm())
-            AbortCryptoMisconfig("Duplicate signature algorithm added");
+            throw std::runtime_error("Duplicate signature algorithm added");
     }
     signers_.push_back(std::move(signer));
 }
