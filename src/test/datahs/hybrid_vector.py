@@ -9,7 +9,12 @@ from Crypto.Hash import SHA256
 # Constants — MUST match C++
 # =====================================================================
 HYBRID_VERSION_ENC = 3
+HYBRID_SIG_MAGIC = b"HYBS"
+HYBRID_SIG_VERSION = 1
 PASSWORD = b"correct horse battery staple"
+
+# AAD covers only the outer header; the inner HYBS header is NOT
+# authenticated (must match C++ FromEncryptedSerialized).
 AAD = b"HYBK" + bytes([HYBRID_VERSION_ENC])
 
 # =====================================================================
@@ -45,20 +50,21 @@ def load_mldsa65_serialized(device):
     data = np.fromfile("mldsa65_priv_serialized.bin", dtype=np.uint8)
     ptr = 0
 
-    version = data[ptr]
+    # alg(1) + pub_len(2) + pub + priv_len(2) + priv
+    alg = data[ptr]
     ptr += 1
 
-    pub_len = (data[ptr] << 8) | data[ptr + 1]
+    pub_len = (int(data[ptr]) << 8) | int(data[ptr + 1])
     ptr += 2
     pub = data[ptr:ptr + pub_len]
     ptr += pub_len
 
-    priv_len = (data[ptr] << 8) | data[ptr + 1]
+    priv_len = (int(data[ptr]) << 8) | int(data[ptr + 1])
     ptr += 2
     priv = data[ptr:ptr + priv_len]
 
     return {
-        "version": torch.tensor([version], dtype=torch.uint8, device=device),
+        "alg": torch.tensor([alg], dtype=torch.uint8, device=device),
         "pub": torch.tensor(pub, dtype=torch.uint8, device=device),
         "priv": torch.tensor(priv, dtype=torch.uint8, device=device),
     }
@@ -69,16 +75,28 @@ def load_mldsa65_serialized(device):
 def load_mldsa65_encrypted(device):
     data = np.fromfile("mldsa65_priv_enc.bin", dtype=np.uint8)
 
+    # v3 layout: HYBK + version + HYBS + sig_version + salt + nonce + ct + tag
     magic = data[0:4]
     version = data[4]
-    salt = data[5:21]          # 16 bytes
-    nonce = data[21:33]        # 12 bytes
-    ciphertext = data[33:-16]
+    sig_magic = data[5:9]
+    sig_version = data[9]
+
+    salt_off = 4 + 1 + 4 + 1
+    salt = data[salt_off:salt_off + 16]
+    nonce = data[salt_off + 16:salt_off + 16 + 12]
+    ciphertext = data[salt_off + 16 + 12:-16]
     tag = data[-16:]
+
+    assert bytes(magic) == b"HYBK"
+    assert int(version) == HYBRID_VERSION_ENC
+    assert bytes(sig_magic) == HYBRID_SIG_MAGIC
+    assert int(sig_version) == HYBRID_SIG_VERSION
 
     return {
         "magic": torch.tensor(magic, dtype=torch.uint8, device=device),
         "version": torch.tensor([version], dtype=torch.uint8, device=device),
+        "sig_magic": torch.tensor(sig_magic, dtype=torch.uint8, device=device),
+        "sig_version": torch.tensor([sig_version], dtype=torch.uint8, device=device),
         "salt": torch.tensor(salt, dtype=torch.uint8, device=device),
         "nonce": torch.tensor(nonce, dtype=torch.uint8, device=device),
         "ciphertext": torch.tensor(ciphertext, dtype=torch.uint8, device=device),
@@ -148,8 +166,8 @@ if __name__ == "__main__":
     mldsa_ser = vectors["mldsa65_serialized"]
     mldsa_enc = vectors["mldsa65_encrypted"]
 
-    print("mldsa65 serialized version:",
-          int(mldsa_ser["version"][0]))
+    print("mldsa65 serialized alg:",
+          int(mldsa_ser["alg"][0]))
 
     print("mldsa65 encrypted magic:",
           bytes(mldsa_enc["magic"].cpu().numpy()))

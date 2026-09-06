@@ -60,13 +60,15 @@ int main()
      *
      *   HYBK
      *   version
+     *   HYBS
+     *   sig_version
      *   salt
      *   nonce
      *   ciphertext
      *   GCM tag
      */
     const size_t expected_header =
-        4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN + ENC_TAG_LEN;
+        4 + 1 + 4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN + ENC_TAG_LEN;
 
     if (!check(encrypted.size() > expected_header,
                "encrypted serialization has expected minimum size"))
@@ -149,13 +151,13 @@ int main()
     /*
      * 8. Modifying the ciphertext must fail AES-GCM authentication.
      *
-     * The first 4 + 1 + salt + nonce bytes are the authenticated
-     * header. Flip a byte in the ciphertext instead.
+     * The first 4 + 1 + 4 + 1 + salt + nonce bytes are the header.
+     * Flip a byte in the ciphertext instead.
      */
     std::vector<uint8_t> tampered = encrypted;
 
     const size_t ciphertext_offset =
-        4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN;
+        4 + 1 + 4 + 1 + ENC_SALT_LEN + ENC_NONCE_LEN;
 
     if (!check(tampered.size() >
                    ciphertext_offset + ENC_TAG_LEN,
