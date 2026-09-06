@@ -441,15 +441,18 @@ bool CWallet::EnsureHybridKey(const CKeyID& keyID)
     // Keys are only persisted here while we still have the plaintext copy in
     // memory (i.e. the wallet is either unencrypted or currently unlocked);
     // an encrypted-but-locked wallet cannot not encrypt new private material.
+    CHybridKeyDisk disk;
+    bool fDiskPersisted = false;
     if (fFileBacked && (!IsCrypted() || !IsLocked())) {
         try {
-            CHybridKeyDisk disk = MakeHybridKeyDisk(hk);
+            disk = MakeHybridKeyDisk(hk);
             CWalletDB walletdb(strWalletFile);
 
             if (!walletdb.WriteHybridKey(hybridID, disk)) {
                 printf("EnsureHybridKey(%s) DB write failed\n", keyID.ToString().c_str());
                 return false;
             }
+            fDiskPersisted = true;
         } catch (const std::exception& e) {
             printf("EnsureHybridKey(%s) DB exception: %s\n", keyID.ToString().c_str(), e.what());
             return false;
@@ -461,6 +464,10 @@ bool CWallet::EnsureHybridKey(const CKeyID& keyID)
 
     mapHybridKeys.emplace(hybridID, std::move(hk));
     mapHybridSigners.emplace(hybridID, std::move(signer));
+
+    if (fDiskPersisted && IsCrypted())
+        mapHybridKeyDisk[hybridID] = disk;
+
     return true;
 }
 
@@ -518,6 +525,11 @@ void NewHybridKeyPool(CWallet* wallet, int nSize)
         LOCK(wallet->cs_wallet);
         for (auto& entry : stagedKeys) {
             wallet->mapHybridKeys.emplace(entry.first, std::move(entry.second));
+        }
+        if (wallet->IsCrypted()) {
+            for (const auto& entry : stagedDisks) {
+                wallet->mapHybridKeyDisk[entry.first] = entry.second;
+            }
         }
     }
     printf("Hybrid key pool of size %d created successfully\n", nSize);
@@ -676,6 +688,8 @@ bool CWallet::DecryptHybridKeys(const CKeyingMaterial& vMasterKey)
                     printf("WARNING: failed to re-encrypt hybrid key %s\n",
                            hybridID.ToString().c_str());
                     fOk = false;
+                } else {
+                    mapHybridKeyDisk[hybridID] = enc;
                 }
             } catch (const std::exception& e) {
                 printf("WARNING: failed to re-encrypt hybrid key %s: %s\n",
