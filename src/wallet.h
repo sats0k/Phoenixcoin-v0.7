@@ -212,6 +212,7 @@ public:
     /* Adds a watch only address to the store without saving it to disk (used by LoadWallet) */
     bool LoadWatchOnly(const CScript &dest);
 
+    bool Lock() override;
     bool Unlock(const SecureString& strWalletPassphrase);
     bool ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase);
     bool EncryptWallet(const SecureString& strWalletPassphrase);

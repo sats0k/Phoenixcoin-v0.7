@@ -150,6 +150,26 @@ bool CWallet::LoadWatchOnly(const CScript &dest) {
     return(CCryptoKeyStore::AddWatchOnly(dest));
 }
 
+bool CWallet::Lock()
+{
+    if (!IsCrypted())
+        return false;
+
+    bool fLocked;
+    {
+        LOCK(cs_wallet);
+        fLocked = CCryptoKeyStore::Lock();
+        if (fLocked)
+        {
+            mapHybridKeys.clear();
+            mapHybridSigners.clear();
+            setUnusedHybridKeys.clear();
+        }
+    }
+
+    return fLocked;
+}
+
 bool CWallet::Unlock(const SecureString& strWalletPassphrase)
 {
     if (!IsLocked())
@@ -169,7 +189,10 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase)
             if (CCryptoKeyStore::Unlock(vMasterKey))
             {
                 if (!DecryptHybridKeys(vMasterKey))
+                {
+                    Lock();
                     return false;
+                }
                 return true;
             }
         }
@@ -351,6 +374,10 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
                         printf("EncryptWallet() : failed to write encrypted hybrid key\n");
                         pwalletdbEncryption->TxnAbort();
                         exit(1);
+                    }
+                    {
+                        LOCK(cs_wallet);
+                        mapHybridKeyDisk[entry.first] = disk;
                     }
                 } catch (const std::exception& e) {
                     printf("EncryptWallet() : hybrid key encryption failed: %s\n", e.what());
