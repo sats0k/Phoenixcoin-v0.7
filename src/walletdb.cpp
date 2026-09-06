@@ -76,11 +76,13 @@ bool CWalletDB::LoadAllHybridKeys(std::vector<std::pair<CHybridKeyID, CHybridKey
 
 bool CWalletDB::WriteHybridKey(const CHybridKeyID &keyID, const CHybridKeyDisk &disk)
 {
+    nWalletDBUpdated++;
     return Write(std::make_pair(std::string("hyb"), keyID), disk);
 }
 
 bool CWalletDB::WriteHybridKeyMetadata(const CHybridKeyID& keyid, const CHybridKeyMetadata& meta)
 {
+    nWalletDBUpdated++;
     return Write(std::make_pair(std::string("hybridkeymeta"), keyid), meta);
 }
 
