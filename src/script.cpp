@@ -1669,7 +1669,7 @@ bool SignHybridTransaction(
         CKeyID keyID = ecdsaPubKey.GetID();
 
         CHybridKey hybridKey;
-        if (!keystore.GetHybridKey(keyID, hybridKey))
+        if (!keystore.GetHybridKeyByLegacyID(keyID, hybridKey))
             return false;
 
         CKey ecdsaKey = hybridKey.GetCKey();
@@ -1748,7 +1748,7 @@ bool SignHybridTransaction(
             CKeyID keyID = pubKey.GetID();
 
             CHybridKey hybridKey;
-            if (!keystore.GetHybridKey(keyID, hybridKey))
+            if (!keystore.GetHybridKeyByLegacyID(keyID, hybridKey))
                 continue;
 
             CKey ecdsaKey = hybridKey.GetCKey();
@@ -1934,7 +1934,7 @@ public:
     bool operator()(const CKeyID &keyID) const { return(keystore->HaveKey(keyID)); }
     bool operator()(const CScriptID &scriptID) const { return(keystore->HaveCScript(scriptID)); }
     bool operator()(const CHybridKeyID &keyID) const{
-        return keystore->HaveHybridKey(CKeyID(keyID));
+        return keystore->HaveHybridKey(keyID);
     }
 };
 
@@ -1997,7 +1997,7 @@ isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey) {
 
             CPubKey ecdsaPub(vSolutions[0]);
 
-            if (keystore.HaveHybridKey(ecdsaPub.GetID()))
+            if (keystore.HaveHybridKeyByLegacyID(ecdsaPub.GetID()))
                 return MINE_SPENDABLE;
 
             break;
@@ -2060,7 +2060,11 @@ public:
     void operator()(const CHybridKeyID& keyId) const
     {
         if (keystore.HaveHybridKey(keyId))
-            vKeys.push_back(CKeyID(uint160(keyId)));
+        {
+            CHybridKey hybridKey;
+            if (keystore.GetHybridKeyByHash(uint160(keyId), hybridKey))
+                vKeys.push_back(hybridKey.GetKeyID());
+        }
     }
 
     void operator()(const CScriptID &scriptId) {
@@ -2263,7 +2267,7 @@ bool SignHybridTx(const CKeyStore& keystore, const CScript& scriptPubKey,
         CKeyID keyID = ecdsaPubKey.GetID();
 
         CHybridKey hybridKey;
-        if (!keystore.GetHybridKey(keyID, hybridKey))
+        if (!keystore.GetHybridKeyByLegacyID(keyID, hybridKey))
             return false;
 
         CKey ecdsaKey = hybridKey.GetCKey();
@@ -2345,7 +2349,7 @@ bool SignHybridTx(const CKeyStore& keystore, const CScript& scriptPubKey,
             CKeyID keyID = ecdsaPub.GetID();
 
             CHybridKey hybridKey;
-            if (!keystore.GetHybridKey(keyID, hybridKey))
+            if (!keystore.GetHybridKeyByLegacyID(keyID, hybridKey))
                 continue;
 
             CKey ecdsaKey = hybridKey.GetCKey();

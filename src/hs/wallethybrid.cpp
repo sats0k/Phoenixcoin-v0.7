@@ -206,6 +206,21 @@ bool CWallet::HaveHybridKeyByHash(const uint160& keyHash) const
            mapHybridKeyDisk.find(hybridID) != mapHybridKeyDisk.end();
 }
 
+bool CWallet::HaveHybridKeyByLegacyID(const CKeyID& keyID) const
+{
+    LOCK(cs_wallet);
+
+    for (std::map<CHybridKeyID, CHybridKey>::const_iterator it =
+             mapHybridKeys.begin();
+         it != mapHybridKeys.end(); ++it)
+    {
+        if (it->second.GetKeyID() == keyID)
+            return true;
+    }
+
+    return false;
+}
+
 bool CWallet::GetHybridKey(const CHybridKeyID& hybridID,
                            CHybridKey& keyOut) const
 {
@@ -859,4 +874,15 @@ bool CWallet::GetHybridKeyIDByLegacyKeyID(const CKeyID& keyID,
     }
 
     return false;
+}
+
+bool CWallet::GetHybridKeyByLegacyID(const CKeyID& keyID,
+                                     CHybridKey& keyOut) const
+{
+    CHybridKeyID hybridID;
+
+    if (!GetHybridKeyIDByLegacyKeyID(keyID, hybridID))
+        return false;
+
+    return GetHybridKey(hybridID, keyOut);
 }

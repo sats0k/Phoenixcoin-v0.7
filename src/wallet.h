@@ -115,8 +115,10 @@ public:
     // ===== Hybrid key access methods (override from CKeyStore) =====
     bool HaveHybridKey(const CHybridKeyID &address) const override;
     bool HaveHybridKeyByHash(const uint160 &keyHash) const override;
+    bool HaveHybridKeyByLegacyID(const CKeyID& keyID) const override;
     bool GetHybridKey(const CHybridKeyID &address, CHybridKey &keyOut) const override;
     bool GetHybridKeyByHash(const uint160 &keyHash, CHybridKey &keyOut) const override;
+    bool GetHybridKeyByLegacyID(const CKeyID& keyID, CHybridKey& keyOut) const override;
     bool GetHybridKeyIDByLegacyKeyID(const CKeyID& keyID,
                                      CHybridKeyID& hybridID) const;
 

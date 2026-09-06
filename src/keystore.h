@@ -146,12 +146,29 @@ public:
         return false;
     }
 
+    // mapHybridKeys is keyed by CHybridKeyID = Hash160(secp || mldsa), which
+    // differs from the CKeyID = Hash160(secp) found in TX_HYBRID_PUBKEY and
+    // TX_HYBRID_MULTISIG script solutions.
+    virtual bool HaveHybridKeyByLegacyID(const CKeyID &/*keyID*/) const
+    {
+        return false;
+    }
+
     virtual bool GetHybridKey(const CHybridKeyID &/*address*/, CHybridKey &/*keyOut*/) const
     {
         return false;
     }
 
     virtual bool GetHybridKeyByHash(const uint160 &/*keyHash*/, CHybridKey &/*keyOut*/) const
+    {
+        return false;
+    }
+
+    // Look up a hybrid key by its legacy ECDSA public-key hash. mapHybridKeys
+    // is keyed by CHybridKeyID = Hash160(secp || mldsa), which differs from the
+    // CKeyID = Hash160(secp) used in TX_HYBRID_PUBKEY / TX_HYBRID_MULTISIG
+    // script solutions; the caller only has the ECDSA pubkey hash.
+    virtual bool GetHybridKeyByLegacyID(const CKeyID &/*keyID*/, CHybridKey &/*keyOut*/) const
     {
         return false;
     }
